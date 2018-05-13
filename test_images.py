@@ -24,6 +24,14 @@ def expand_gaussians(dist, width=0.2, spacing=0.1, max_value=8, min_value=0):
                   - np.expand_dims(dist, axis=-1)) ** 2) / width
     return np.exp(exponent)
 
+
+def expand_atomic_numbers(gaussians, one_hot_z):
+    gaussians = np.expand_dims(gaussians, axis=-1)
+    z = one_hot_z.reshape((gaussians.shape[0], 1,
+                           gaussians.shape[1], 1, one_hot_z.shape[-1]))
+    return gaussians * z
+
+
 def main():
     r = np.array([[
         [-0.7320000, 1.1400000, 0.1000000],
@@ -50,7 +58,7 @@ def main():
 
     gaussians = expand_gaussians(dist)
 
-    atomic_images = np.expand_dims(gaussians, axis=-1) * one_hot_z.reshape((z.shape[0], 1, z.shape[1], 1, one_hot_z.shape[-1]))
+    atomic_images = expand_atomic_numbers(gaussians, one_hot_z)
     atomic_images = np.sum(atomic_images, axis=2)
     flattened_atomic_images = np.concatenate(tuple(atomic_images[0, i] for i in range(atomic_images.shape[1])), axis=-1)
 
