@@ -1,38 +1,12 @@
 import numpy as np
+
 import matplotlib.pyplot as plt
-
-
-def distance_matrix(coordinates):
-    dist = np.expand_dims(coordinates, axis=1) - np.expand_dims(coordinates, axis=2)
-    dist = np.square(dist)
-    dist = np.sum(dist, axis=-1)
-    dist = np.sqrt(dist)
-    return dist
-
-
-def one_hot(indices):
-    return np.eye(np.max(indices) + 1)[indices]
-
-
-def indices(one_hot):
-    return np.argmax(one_hot, axis=-1)
-
-
-def expand_gaussians(dist, width=0.2, spacing=0.1, max_value=8, min_value=0):
-    mu = np.arange(min_value, max_value, spacing)
-    exponent = -((np.reshape(mu, tuple(1 for _ in range(len(dist.shape))) + (-1,))
-                  - np.expand_dims(dist, axis=-1)) ** 2) / width
-    return np.exp(exponent)
-
-
-def expand_atomic_numbers(gaussians, one_hot_z):
-    gaussians = np.expand_dims(gaussians, axis=-1)
-    z = one_hot_z.reshape((gaussians.shape[0], 1,
-                           gaussians.shape[1], 1, one_hot_z.shape[-1]))
-    return gaussians * z
+from atomic_images.np_utils import (distance_matrix, expand_atomic_numbers,
+                                    expand_gaussians, one_hot, zero_dummy_atoms)
 
 
 def inverse_gaussian(dist, width=0.2, spacing=0.1, max_value=8, min_value=0):
+    # TODO: write DOCSTRING and make general to any size array
     mu = np.arange(min_value, max_value, spacing)
     dist_p = mu + np.sqrt(-width * np.log(dist))
     dist_p = dist_p[dist >= 0.1]
@@ -49,6 +23,7 @@ def inverse_gaussian(dist, width=0.2, spacing=0.1, max_value=8, min_value=0):
 
 
 def main():
+    # Positions and atomic numbers for para-chlorobenzoic acid and methane
     r = np.array([[
         [-0.7320000, 1.1400000, 0.1000000],
         [0.6630000, 1.2080000, -0.0480000],
@@ -65,25 +40,84 @@ def main():
         [1.1264011, 2.1239486, -0.1544032],
         [1.3038395, -1.9646996, 0.3297916],
         [-1.1094586, -2.1500925, -0.1598872]
+    ],
+    [
+        [0.0000, 0.0000, 0.0000],
+        [0.5288, 0.1610, 0.9359],
+        [0.2051, 0.8240, -0.6786],
+        [0.3345, -0.9314, -0.4496],
+        [-1.0685, -0.0537, 0.1921],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0]
     ]])
-    z = np.array([[6, 6, 6, 6, 6, 6, 6, 8, 8, 17, 1, 1, 1, 1, 1]])
+    z = np.array([[6, 6, 6, 6, 6, 6, 6, 8, 8, 17, 1, 1, 1, 1, 1],
+                  [6, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
     one_hot_z = one_hot(z)
 
-    dist = distance_matrix(r)
-    print(dist)
+    dist_matrix = distance_matrix(r)
+    gaussians, mu = expand_gaussians(dist_matrix, return_mu=True)
+    interaction_images = zero_dummy_atoms(gaussians, one_hot_z, atom_axes=[1, 2])
+    interaction_images = expand_atomic_numbers(interaction_images, one_hot_z, zero_dummy_atoms=False)
 
-    gaussians = expand_gaussians(dist)
-    idist = inverse_gaussian(gaussians[0, 0, 5])
+    # Which molecule to visualize
+    mol_i = 1
 
-    atomic_images = expand_atomic_numbers(gaussians, one_hot_z)
-    atomic_images = np.sum(atomic_images, axis=2)
-    flattened_atomic_images = np.concatenate(tuple(atomic_images[0, i] for i in range(atomic_images.shape[1])), axis=-1)
+    # Show image before summing
+    # Corresponds to an image of an "interaction" between two atoms
+    plt.imshow(interaction_images[mol_i, 0, 0])
+    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.title('Interaction Image')
+    plt.ylabel('Distance (Angstroms)')
+    plt.xlabel('Atomic Number')
+    plt.show()
 
-    # Display the carbon atom
-    print(flattened_atomic_images.shape)
+    flattened_interaction_images = np.concatenate(tuple(interaction_images[mol_i, 0, i] for i in range(interaction_images.shape[2])), axis=-1)
+    plt.imshow(flattened_interaction_images)
+    plt.xticks(np.arange(0, flattened_interaction_images.shape[-1], interaction_images.shape[-1]))
+    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.title('All Interaction Images')
+    plt.ylabel('Distance (Angstroms)')
+    plt.xlabel('Atomic Number')
+    plt.grid(True, which='major', axis='x')
+    plt.show()
+
+    # Squash one atoms dimension to get atomic images
+    # Corresponds to all interactions for single atoms
+    atomic_images = np.sum(interaction_images, axis=2)
+    plt.imshow(atomic_images[mol_i, 0])
+    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.title('Atomic Image')
+    plt.ylabel('Distance (Angstroms)')
+    plt.xlabel('Atomic Number')
+    plt.show()
+
+    # Show all atoms for para-chlorobenzoic acid
+    flattened_atomic_images = np.concatenate(tuple(atomic_images[mol_i, i] for i in range(atomic_images.shape[1])), axis=-1)
     plt.imshow(flattened_atomic_images)
     plt.xticks(np.arange(0, flattened_atomic_images.shape[-1], atomic_images.shape[-1]))
+    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.title('All Atomic Images')
+    plt.ylabel('Distance (Angstroms)')
+    plt.xlabel('Atomic Number')
     plt.grid(True, which='major', axis='x')
+    plt.show()
+
+    # Squash the last atoms dimension to get molecular images
+    # Corresponds to all interactions for every atom in the molecule
+    molecular_images = np.sum(atomic_images, axis=1)
+    plt.imshow(molecular_images[mol_i])
+    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.title('Molecular Image')
+    plt.ylabel('Distance (Angstroms)')
+    plt.xlabel('Atomic Number')
     plt.show()
 
 
