@@ -1,5 +1,6 @@
 from keras.layers import Layer
 from keras import backend as K
+from atomic_images import keras_utils
 
 import numpy as np
 
@@ -62,55 +63,55 @@ class DistanceMatrix(Layer):
 
 
 class GaussianBasis(Layer):
-    """
-    Gaussian basis expansion layer
+    """Expand distance matrix into Gaussians of width=width, spacing=spacing,
+    starting at min_value ending at max_value (inclusive if endpoint=True).
 
-    Expands a distance matrix into a uniform grid of Gaussians of width
-    `width` and spacing `step`.
+        -(x - u)^2
+    exp(----------)     where: u is linspace(min_value, max_value, ceil((max_value - min_value) / width))
+          2 * w^2              w is width
 
     Input: distance_matrix (batch, atoms, atoms)
     Output: distance_matrix expanded into Gaussian basis set
-                (batch, atoms, atoms, n_gaussians)
 
-    Arguments:
-        width (float): the width (standard deviation) of the Gaussians
-        step (float): the spacing between Gaussians
-        min_value (float): the minimum value for K.arange()
-        max_value (float): the maximum value for K.arange()
-        zero_thresh (float): the value below which the output should be
-            zeroed
+    Args:
+        min_value (float, optional): minimum value
+        max_value (float, optional): maximum value (non-inclusive)
+        width (float, optional): width of Gaussians
+        spacing (float, optional): spacing between Gaussians
+        self_thresh (float, optional): value below which a distance is
+            considered to be a self interaction (i.e. zero)
+        include_self_interactions (bool, optional): whether or not to include
+            self-interactions (i.e. distance is zero)
+                (batch, atoms, atoms, n_gaussians)
     """
-    def __init__(self,
-                 width,
-                 step,
-                 min_value=0.0,
-                 max_value=20.0,
-                 zero_thresh=1e-5,
-                 **kwargs):
+    def __init__(self, min_value=-1, max_value=9, width=0.2, spacing=0.1,
+                 self_thresh=1e-5, include_self_interactions=True,
+                 endpoint=False, **kwargs):
         super(GaussianBasis, self).__init__(**kwargs)
-        self._n_centers = int(np.ceil((max_value - min_value) / step))
+        self._n_centers = int(np.ceil((max_value - min_value) / spacing))
         self.min_value = min_value
         self.max_value = max_value
-        self.step = step
+        self.spacing = spacing
         self.width = width
-        self.zero_thresh = zero_thresh
+        self.self_thresh = self_thresh
+        self.include_self_interactions = include_self_interactions
+        self.endpoint = endpoint
 
-        self._gamma = -0.5 / self.width  ** 2
+        self._gamma = -0.5 / (self.width  ** 2)
 
     def call(self, distance_matrix):
         distances = K.expand_dims(distance_matrix, -1)
-        mu = K.arange(self.min_value, self.max_value, self.step,
-                           dtype=K.floatx())
+        mu = keras_utils.linspace(self.min_value, self.max_value, self._n_centers,
+                                  endpoint=self.endpoint)
         mu = K.reshape(mu, (1, 1, 1, -1))
 
-        # `rdf` should be of shape (batch, atoms, atoms, n_centres)
-        rdf = K.exp(self._gamma * K.square(distances - mu))
+        gaussians = K.exp(self._gamma * K.square(distances - mu))
 
-        # `mask` is of shape (batch, atoms, atoms, 1)`
-        mask = K.cast(distances < self.zero_thresh, K.floatx())
-        rdf *= mask
+        if not self.include_self_interactions:
+            mask = K.cast(distances >= self.self_thresh, K.floatx())
+            gaussians *= mask
 
-        return rdf
+        return gaussians
 
     def compute_output_shape(self, distance_matrix_shape):
         return (distance_matrix_shape[0],
@@ -121,10 +122,12 @@ class GaussianBasis(Layer):
     def get_config(self):
         config = {
             'width': self.width,
-            'step': self.step,
+            'spacing': self.spacing,
             'min_value': self.min_value,
             'max_value': self.max_value,
-            'zero_thresh': self.zero_thresh
+            'self_thresh': self.self_thresh,
+            'include_self_interactions': self.include_self_interactions,
+            'endpoint': self.endpoint
         }
         base_config = super(GaussianBasis, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -139,7 +142,8 @@ class AtomicNumberBasis(Layer):
     Output:
         gaussians_atom_matrix  (batch, atoms, atoms, n_gaussians, max_atomic_number + 1)
     """
-    def __init__(self, max_atomic_number=None, zero_dummy_atoms=False):
+    def __init__(self, max_atomic_number=None, zero_dummy_atoms=False, **kwargs):
+        super(AtomicNumberBasis, self).__init__(**kwargs)
         self.max_atomic_number = max_atomic_number
         self.zero_dummy_atoms = zero_dummy_atoms
 
@@ -279,7 +283,8 @@ class DummyAtomMasking(Layer):
             value  (batch, atoms, ...)
     Output: value with zeroes for dummy atoms  (batch, atoms, ...)
     """
-    def __init__(self, atom_axes=1):
+    def __init__(self, atom_axes=1, **kwargs):
+        super(DummyAtomMasking, self).__init__(**kwargs)
         if isinstance(atom_axes, int):
             atom_axes = [atom_axes]
         elif isinstance(atom_axes, tuple):
@@ -302,10 +307,11 @@ class DummyAtomMasking(Layer):
         dummy_mask = K.not_equal(atomic_numbers, 0)
         dummy_mask = K.cast(dummy_mask, K.floatx())
 
-        for axe in self.atom_axes:
+        for axis in self.atom_axes:
             mask = dummy_mask
-            for _ in range(axe - 1):
+            for _ in range(axis - 1):
                 mask = K.expand_dims(mask, axis=1)
+            # Add one since K.int_shape does not return batch dim
             while len(K.int_shape(value)) != len(K.int_shape(mask)):
                 mask = K.expand_dims(mask, axis=-1)
 
@@ -321,5 +327,5 @@ class DummyAtomMasking(Layer):
         config = {
             'atom_axes': self.atom_axes
         }
-        base_config = super(AtomRefOffset, self).get_config()
+        base_config = super(DummyAtomMasking, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

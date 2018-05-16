@@ -5,23 +5,6 @@ from atomic_images.np_utils import (distance_matrix, expand_atomic_numbers,
                                     expand_gaussians, one_hot, zero_dummy_atoms)
 
 
-def inverse_gaussian(dist, width=0.2, spacing=0.1, max_value=8, min_value=0):
-    # TODO: write DOCSTRING and make general to any size array
-    mu = np.arange(min_value, max_value, spacing)
-    dist_p = mu + np.sqrt(-width * np.log(dist))
-    dist_p = dist_p[dist >= 0.1]
-    dist_m = mu - np.sqrt(-width * np.log(dist))
-    dist_m = dist_m[dist >= 0.1]
-    if np.allclose(dist_p[0:3], dist_p[0]):
-        return dist_p[0]
-    elif np.allclose(dist_p[-3:], dist_p[-1]):
-        return dist_p[-1]
-    elif np.allclose(dist_m[0:3], dist_m[0]):
-        return dist_m[0]
-    elif np.allclose(dist_m[-3:], dist_m[-1]):
-        return dist_m[-1]
-
-
 def main():
     # Positions and atomic numbers for para-chlorobenzoic acid and methane
     r = np.array([[
