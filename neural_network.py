@@ -23,10 +23,10 @@ class AtomicImagesModel(kml.KerasModel):
         defaults = {
             'batch_size': 32,
             'optimizer': {
-                'optimizer': 'adam',
-                # 'config': {
-                #     'lr': 1e-12
-                # }
+                'optimizer': 'sgd',
+                'config': {
+                    'lr': 1e-2
+                }
             },
             'inputs': {
                 'coordinates_shape': (29, 3),
@@ -45,9 +45,15 @@ class AtomicImagesModel(kml.KerasModel):
                 'standardize_outputs': True,
                 'offset_by_ref': False,
                 'layers': {
+                    'atomwise_conv0': {
+                        'kernel_size': [7, 1],
+                        'filters': 1,
+                        'activation': 'relu',
+                        'bias_initializer': 'ones'
+                    },
                     'atomwise_dense0': {
-                        'units': 512,
-                        'activation': 'elu',
+                        'units': 1,
+                        'activation': 'linear',
                         'batchnorm': False
                     },
                     # 'atomwise_dense1': {
@@ -55,10 +61,10 @@ class AtomicImagesModel(kml.KerasModel):
                     #     'activation': 'elu',
                     #     'batchnorm': True
                     # },
-                    'atomwise_dense1': {
-                        'units': 1,
-                        'activation': 'linear'
-                    }
+                    # 'atomwise_dense1': {
+                    #     'units': 1,
+                    #     'activation': 'linear'
+                    # }
                 }
             }
         }
