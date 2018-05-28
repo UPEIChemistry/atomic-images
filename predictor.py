@@ -4,7 +4,7 @@ from keras.layers import (AlphaDropout, BatchNormalization, Dense, Dropout,
 from keras.initializers import get as get_initializer
 
 
-class Predictor(Layer):
+class Predictor(object):
     DEFAULT_LAYER_PARAMS = {
         'interaction_dense0': {
             'units': 256,
@@ -27,13 +27,12 @@ class Predictor(Layer):
         }
     }
 
-    def __init__(self, layer_params, **kwargs):
+    def __init__(self, layer_params):
         """Property predictor
 
         Args:
             layer_params (dict): layer parameters
         """
-        super(Predictor, self).__init__(**kwargs)
         self.layer_params = layer_params
 
     @staticmethod
@@ -111,7 +110,7 @@ class Predictor(Layer):
                             name='{0}_dropout'.format(name))(x)
         return x
 
-    def call(self, inputs=None):
+    def __call__(self, inputs=None):
         x = inputs
         input_shape = K.int_shape(x)
         atoms_shape = input_shape[1]
@@ -193,23 +192,3 @@ class Predictor(Layer):
             x = Predictor.dense_block(dense_dict, x, name=dense_key)
 
         return x
-
-    def compute_output_shape(self, inputs):
-        output_shape = inputs
-
-        # Atom-wise Dense Layers
-        for i in range(100):
-            dense_key = 'atomwise_dense{i}'.format(i=i)
-            if dense_key not in self.layer_params:
-                break
-            dense_dict = self.layer_params[dense_key]
-            output_shape = output_shape[0:2] + (dense_dict['units'],)
-
-        return output_shape
-
-    def get_config(self):
-        config = {
-            'layer_params': self.layer_params
-        }
-        base_config = super(Predictor, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))

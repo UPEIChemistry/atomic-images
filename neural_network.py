@@ -23,9 +23,9 @@ class AtomicImagesModel(kml.KerasModel):
         defaults = {
             'batch_size': 32,
             'optimizer': {
-                'optimizer': 'sgd',
+                'optimizer': 'adam',
                 'config': {
-                    'lr': 1e-2
+                    'lr': 1e-3
                 }
             },
             'inputs': {
@@ -48,8 +48,7 @@ class AtomicImagesModel(kml.KerasModel):
                     'atomwise_conv0': {
                         'kernel_size': [7, 1],
                         'filters': 1,
-                        'activation': 'relu',
-                        'bias_initializer': 'ones'
+                        'activation': 'relu'
                     },
                     'atomwise_dense0': {
                         'units': 1,
@@ -133,8 +132,7 @@ class AtomicImagesModel(kml.KerasModel):
         #
         predictor_params = hps['predictor/layers']
         self.property_predictor = Predictor(
-            layer_params=predictor_params,
-            name='predictor_layer'
+            layer_params=predictor_params
         )
         pred_out = self.property_predictor(interaction_images)
 
@@ -175,7 +173,8 @@ class AtomicImagesModel(kml.KerasModel):
             cbks.append(
                 TensorBoard(
                     kwargs.get('tensorboard_dir', './tensorboard_logs'),
-                    histogram_freq=1
+                    histogram_freq=1,
+                    write_grads=True
                 )
             )
         return cbks
