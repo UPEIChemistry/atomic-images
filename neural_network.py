@@ -165,16 +165,3 @@ class AtomicImagesModel(kml.KerasModel):
             metrics=hps['predictor/metrics'],
             optimizer=optimizer
         )
-
-    def get_callbacks(self, **kwargs):
-        from keras.callbacks import TensorBoard
-        cbks = []
-        if kwargs.get('use_tensorboard'):
-            cbks.append(
-                TensorBoard(
-                    kwargs.get('tensorboard_dir', './tensorboard_logs'),
-                    histogram_freq=1,
-                    write_grads=True
-                )
-            )
-        return cbks
