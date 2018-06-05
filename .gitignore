@@ -103,6 +103,11 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-# Custom
-test_storage/
+# Numpy
 *.np[yz]
+
+# VS Code
+.vscode
+
+# Project
+test_storage/

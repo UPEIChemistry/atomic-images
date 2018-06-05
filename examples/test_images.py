@@ -43,11 +43,21 @@ def main():
     ]])
     z = np.array([[6, 6, 6, 6, 6, 6, 6, 8, 8, 17, 1, 1, 1, 1, 1],
                   [6, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
+
+    # Converts index based atomic numbers to one-hot
     one_hot_z = one_hot(z)
 
+    # Calculates the distance matrix for the given Cartesian coordinates
     dist_matrix = distance_matrix(r)
+
+    # Expands distances into a Gaussian basis set, returning mu for plotting
+    # purposes.
     gaussians, mu = expand_gaussians(dist_matrix, return_mu=True)
+
+    # Sets elements of dummy atoms (z = 0) to zero
     interaction_images = zero_dummy_atoms(gaussians, one_hot_z, atom_axes=[1, 2])
+
+    # Expands the Gaussians into a one-hot atomic number dimension
     interaction_images = expand_atomic_numbers(interaction_images, one_hot_z, zero_dummy_atoms=False)
 
     # Which molecule to visualize
