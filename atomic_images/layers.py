@@ -1,5 +1,6 @@
 from keras.layers import Layer
 from keras import backend as K
+from keras.initializers import Constant as ConstantInit
 from atomic_images import keras_utils
 
 import numpy as np
@@ -192,6 +193,133 @@ class AtomicNumberBasis(Layer):
         }
         base_config = super(AtomicNumberBasis, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+class Unstandardization(Layer):
+    """
+    Offsets energies by mean and standard deviation (optionally, per-atom)
+
+    Inputs: the inputs to this layer depend on whether or not mu and sigma
+            are given as a single scalar or per atom type.
+
+        If scalar:
+            atomic_energies  (batch, atoms, energies)
+        If per type:
+            atomic_numbers
+                Either or both in this order:
+                    atomic_numbers  (batch, atoms)
+                or
+                    one_hot_atomic_numbers (batch, atoms, atomic_number)
+            atomic_energies  (batch, atoms, energies)
+    Output: atomic energies  (batch, atoms, energies)
+
+    Attributes:
+        mu (float, list, or np.ndarray): a scalar that applies equally
+            to all atom types or a list or numpy array where
+            `mu[atomic_number]` is the mean energy for an atom with
+            atomic number `atomic number`.
+
+            This object gets serialized to JSON with the Keras model,
+            so be careful not to pass a huge object.
+        sigma (float, list, or np.ndarray): a scalar that applies equally
+            to all atom types or a list or numpy array where
+            `sigma[atomic_number]` is the standard deviation of the energy
+            for an atom with atomic number `atomic number`.
+
+            This object gets serialized to JSON with the Keras model,
+            so be careful not to pass a huge object.
+    """
+    def __init__(self, mu, sigma, trainable=False, **kwargs):
+        super(Unstandardization, self).__init__(trainable=trainable, **kwargs)
+        self.init_mu = mu
+        self.init_sigma = sigma
+
+        self.mu = np.asanyarray(self.init_mu)
+        if len(self.mu.shape) == 1:
+            self.mu = np.expand_dims(self.mu, axis=1)
+        self.sigma = np.asanyarray(self.init_sigma)
+        if len(self.sigma.shape) == 1:
+            self.sigma = np.expand_dims(self.sigma, axis=1)
+
+        self.per_type = len(self.mu.shape) > 0
+
+    def build(self, input_shapes):
+        # Add the weights
+        self.mu = self.add_weight(
+            name='mu',
+            shape=self.mu.shape,
+            initializer=ConstantInit(self.mu)
+        )
+        self.sigma = self.add_weight(
+            name='sigma',
+            shape=self.sigma.shape,
+            initializer=ConstantInit(self.sigma)
+        )
+
+    def call(self, inputs):
+        # `atomic_energies` should be of shape (batch, atoms, energies)
+
+        # If mu and sigma are given per atom type, need atomic numbers
+        # to know how to apply them. Otherwise, just energies is enough.
+        if self.per_type:
+            if len(inputs) == 3:
+                atomic_numbers, one_hot_atomic_numbers, atomic_energies = inputs
+            else:
+                atomic_numbers, atomic_energies = inputs
+                atomic_numbers_shape = K.int_shape(atomic_numbers)
+                # If shape is 3-long, one-hot
+                if len(atomic_numbers_shape) == 3:
+                    one_hot_atomic_numbers = atomic_numbers
+                    atomic_numbers = K.argmax(one_hot_atomic_numbers,
+                                              axis=-1)
+                else:
+                    one_hot_atomic_numbers = K.one_hot(
+                        atomic_numbers,
+                        self.per_type.shape[0]
+                    )
+        else:
+            atomic_energies = inputs
+
+        if self.per_type:
+            mus = K.dot(one_hot_atomic_numbers, self.mu)
+            sigmas = K.dot(one_hot_atomic_numbers, self.sigma)
+            atomic_energies *= sigmas
+            atomic_energies += mus
+        else:
+            atomic_energies *= self.sigma
+            atomic_energies += self.mu
+
+        return atomic_energies
+
+    def compute_output_shape(self, input_shapes):
+        if self.per_type:
+            atomic_energies = input_shapes[-1]
+        else:
+            atomic_energies = input_shapes
+        return atomic_energies
+
+    def get_config(self):
+        mu = self.init_mu
+        if isinstance(mu, (np.ndarray, np.generic)):
+            if len(mu.shape) > 0:
+                mu = mu.tolist()
+            else:
+                mu = float(mu)
+
+        sigma = self.init_sigma
+        if isinstance(sigma, (np.ndarray, np.generic)):
+            if len(sigma.shape) > 0:
+                sigma = sigma.tolist()
+            else:
+                sigma = float(sigma)
+
+        config = {
+            'mu': mu,
+            'sigma': sigma
+        }
+        base_config = super(Unstandardization, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
 
 
 class AtomRefOffset(Layer):
