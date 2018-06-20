@@ -1,9 +1,9 @@
-from keras.layers import Layer
+import numpy as np
 from keras import backend as K
 from keras.initializers import Constant as ConstantInit
-from atomic_images import keras_utils
+from keras.layers import Layer
 
-import numpy as np
+from atomic_images import keras_utils
 
 
 class OneHot(Layer):
@@ -186,17 +186,25 @@ class Unstandardization(Layer):
         first axis shape is 1. It then follows the matrix rules.
 
         If the value is a matrix, rows correspond to types of atoms and
-        columns correspond to properties. If there is one row
+        columns correspond to properties.
+
+            If there is only one row, then the row vector applies to every
+            type of atom equally.
+
+            If there is one column, then the scalars are applied to every
+            property equally.
+
+            If there is a single scalar, then it is treated as a scalar.
 
     Inputs: the inputs to this layer depend on whether or not mu and sigma
             are given as a single scalar or per atom type.
 
         If scalar:
-            atomic_energies  (batch, atoms, energies)
+            atomic_props  (batch, atoms, energies)
         If per type:
             one_hot_atomic_numbers (batch, atoms, atomic_number)
-            atomic_energies  (batch, atoms, energies)
-    Output: atomic energies  (batch, atoms, energies)
+            atomic_props  (batch, atoms, energies)
+    Output: atomic_props  (batch, atoms, energies)
 
     Attributes:
         mu (float, list, or np.ndarray): the mean values by which
@@ -212,28 +220,36 @@ class Unstandardization(Layer):
         self.mu = np.asanyarray(self.init_mu)
         self.sigma = np.asanyarray(self.init_sigma)
 
+        self.per_type = len(self.mu.shape) > 0 or kwargs.get('per_type')
+
+    @staticmethod
+    def expand_ones_to_shape(arr, shape):
+        if len(arr.shape) == 0:
+            arr = arr.reshape((1 ,1))
+        if 1 in arr.shape:
+            tile_shape = tuple(shape[i] if arr.shape[i] == 1 else 1
+                               for i in range(len(shape)))
+            arr = np.tile(arr, tile_shape)
+        if arr.shape != shape:
+            raise ValueError('the arrays were not of the right shape: '
+                             'expected %s but was %s' % (shape, arr.shape))
+        return arr
+
+    def build(self, input_shapes):
         # If mu is given as a vector, assume it applies to all atoms
         if len(self.mu.shape) == 1:
             self.mu = np.expand_dims(self.mu, axis=0)
         if len(self.sigma.shape) == 1:
             self.sigma = np.expand_dims(self.sigma, axis=0)
 
-        self.per_type = len(self.mu.shape) > 0 or kwargs.get('per_type')
+        if self.per_type or isinstance(input_shapes, list):
+            one_hot_atomic_numbers, atomic_props = input_shapes
+            w_shape = (one_hot_atomic_numbers[-1], atomic_props[-1])
 
-    def build(self, input_shapes):
-        if self.per_type or isinstance(input_shapes, (list, tuple)):
-            one_hot_atomic_numbers, atomic_energies = input_shapes
-            w_shape = (one_hot_atomic_numbers[-1], atomic_energies[-1])
-            if w_shape != self.mu.shape:
-                if self.mu.shape[0] == 1:
-                    # Repeat vector for each atom type
-                    self.mu = np.tile(self.mu, (w_shape[0], 1))
-                    self.sigma = np.tile(self.sigma, (w_shape[0], 1))
-                else:
-                    raise ValueError('the mu and sigma values must be of shape '
-                                    '(max_z, n_properties)')
+            self.mu = self.expand_ones_to_shape(self.mu, w_shape)
+            self.sigma = self.expand_ones_to_shape(self.sigma, w_shape)
         else:
-            atomic_energies = input_shapes
+            atomic_props = input_shapes
             w_shape = self.mu.shape
 
         self.mu = self.add_weight(
@@ -246,34 +262,33 @@ class Unstandardization(Layer):
             shape=w_shape,
             initializer=ConstantInit(self.sigma)
         )
+        super(Unstandardization, self).build(input_shapes)
 
     def call(self, inputs):
-        # `atomic_energies` should be of shape (batch, atoms, energies)
+        # `atomic_props` should be of shape (batch, atoms, energies)
 
         # If mu and sigma are given per atom type, need atomic numbers
         # to know how to apply them. Otherwise, just energies is enough.
         if self.per_type or isinstance(inputs, (list, tuple)):
-            one_hot_atomic_numbers, atomic_energies = inputs
+            one_hot_atomic_numbers, atomic_props = inputs
         else:
-            atomic_energies = inputs
+            atomic_props = inputs
 
         if self.per_type:
-            mus = K.dot(one_hot_atomic_numbers, self.mu)
-            sigmas = K.dot(one_hot_atomic_numbers, self.sigma)
-            atomic_energies *= sigmas
-            atomic_energies += mus
+            atomic_props *= K.dot(one_hot_atomic_numbers, self.sigma)
+            atomic_props += K.dot(one_hot_atomic_numbers, self.mu)
         else:
-            atomic_energies *= self.sigma
-            atomic_energies += self.mu
+            atomic_props *= self.sigma
+            atomic_props += self.mu
 
-        return atomic_energies
+        return atomic_props
 
     def compute_output_shape(self, input_shapes):
-        if self.per_type or isinstance(input_shapes, (list, tuple)):
-            atomic_energies = input_shapes[-1]
+        if self.per_type or isinstance(input_shapes, list):
+            atomic_props = input_shapes[-1]
         else:
-            atomic_energies = input_shapes
-        return atomic_energies
+            atomic_props = input_shapes
+        return atomic_props
 
     def get_config(self):
         mu = self.init_mu
@@ -301,20 +316,15 @@ class Unstandardization(Layer):
 
 class AtomRefOffset(Unstandardization):
     """
-    Offsets energies by per-atom reference energies.
-    Special case of Unstandardization.
+    Offsets energies by per-atom reference properties.
+    Simpler case of Unstandardization.
 
     Inputs: one_hot_atomic_numbers (batch, atoms, atomic_number)
-            atomic_energies  (batch, atoms, energies)
-    Output: atomic energies  (batch, atoms, energies)
+            atomic_props  (batch, atoms, energies)
+    Output: atomic_props  (batch, atoms, energies)
 
     Attributes:
-        atom_ref (list or np.ndarray): a list or numpy array where
-            `atom_ref[atomic_number]` is the reference energy for an
-            atom with atomic number `atomic number`.
-
-            This object gets serialized to JSON with the Keras model, so
-            be careful not to pass a huge object.
+        atom_ref (list or np.ndarray): atom references
     """
     def __init__(self, atom_ref=None, add_offset=True, **kwargs):
         self.add_offset = add_offset

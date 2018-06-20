@@ -18,9 +18,9 @@ def main():
     max_z = 6
     n_props = 4
 
-    dummy_r = np.random.random((n_batches * batch_size, n_atoms, 3))
+    dummy_r = np.random.normal(loc=0, scale=3.0, size=(n_batches * batch_size, n_atoms, 3))
     dummy_z = np.random.randint(0, max_z, size=(n_batches * batch_size, n_atoms))
-    dummy_x = np.random.random((n_batches * batch_size, n_props))
+    dummy_x = np.random.normal(loc=-500, scale=50.0, size=(n_batches * batch_size, n_props))
 
     mu = np.mean(dummy_x, axis=0)
     sigma = np.std(dummy_x, axis=0)
