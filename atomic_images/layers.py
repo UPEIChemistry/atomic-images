@@ -213,6 +213,7 @@ class Unstandardization(Layer):
             values by which to scale the inputs to this layer
     """
     def __init__(self, mu, sigma, trainable=False, **kwargs):
+        per_type = kwargs.pop('per_type', None)
         super(Unstandardization, self).__init__(trainable=trainable, **kwargs)
         self.init_mu = mu
         self.init_sigma = sigma
@@ -220,7 +221,7 @@ class Unstandardization(Layer):
         self.mu = np.asanyarray(self.init_mu)
         self.sigma = np.asanyarray(self.init_sigma)
 
-        self.per_type = len(self.mu.shape) > 0 or kwargs.get('per_type')
+        self.per_type = len(self.mu.shape) > 0 or per_type
 
     @staticmethod
     def expand_ones_to_shape(arr, shape):
@@ -323,7 +324,8 @@ class AtomRefOffset(Unstandardization):
     Output: atomic_props  (batch, atoms, energies)
 
     Attributes:
-        atom_ref (list or np.ndarray): atom references
+        atom_ref (list or np.ndarray): atom references of
+            shape (atomic_number, n_props)
     """
     def __init__(self, atom_ref=None, add_offset=True, **kwargs):
         self.add_offset = add_offset
@@ -335,6 +337,7 @@ class AtomRefOffset(Unstandardization):
         super(AtomRefOffset, self).__init__(
             mu=atom_ref,
             sigma=kwargs.pop('sigma', 1),
+            per_type=True,
             **kwargs
         )
 
