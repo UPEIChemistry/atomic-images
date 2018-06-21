@@ -243,13 +243,13 @@ class Unstandardization(Layer):
             self.sigma = np.expand_dims(self.sigma, axis=0)
 
         if self.per_type or isinstance(input_shapes, list):
+            self.per_type = True
             one_hot_atomic_numbers, atomic_props = input_shapes
             w_shape = (one_hot_atomic_numbers[-1], atomic_props[-1])
 
             self.mu = self.expand_ones_to_shape(self.mu, w_shape)
             self.sigma = self.expand_ones_to_shape(self.sigma, w_shape)
         else:
-            atomic_props = input_shapes
             w_shape = self.mu.shape
 
         self.mu = self.add_weight(
