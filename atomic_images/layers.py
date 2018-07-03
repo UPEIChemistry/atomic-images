@@ -63,16 +63,12 @@ class DistanceMatrix(Layer):
         return (positions_shape[0], positions_shape[1], positions_shape[1])
 
 
-class GaussianBasis(Layer):
-    """Expand distance matrix into Gaussians of width=width, spacing=spacing,
+class KernelBasis(Layer):
+    """Expand distance matrix using kernel of width=width, spacing=spacing,
     starting at min_value ending at max_value (inclusive if endpoint=True).
 
-        -(x - u)^2
-    exp(----------)     where: u is linspace(min_value, max_value, ceil((max_value - min_value) / width))
-          2 * w^2              w is width
-
     Input: distance_matrix (batch, atoms, atoms)
-    Output: distance_matrix expanded into Gaussian basis set
+    Output: distance_matrix expanded into kernel basis set
 
     Args:
         min_value (float, optional): minimum value
@@ -85,10 +81,10 @@ class GaussianBasis(Layer):
             self-interactions (i.e. distance is zero)
                 (batch, atoms, atoms, n_gaussians)
     """
-    def __init__(self, min_value=-1, max_value=9, width=0.2, spacing=0.1,
-                 self_thresh=1e-5, include_self_interactions=True,
+    def __init__(self, min_value=-1, max_value=9, width=2.0,
+                 spacing=0.2, self_thresh=1e-5, include_self_interactions=True,
                  endpoint=False, **kwargs):
-        super(GaussianBasis, self).__init__(**kwargs)
+        super(KernelBasis, self).__init__(**kwargs)
         self._n_centers = int(np.ceil((max_value - min_value) / spacing))
         self.min_value = min_value
         self.max_value = max_value
@@ -98,21 +94,21 @@ class GaussianBasis(Layer):
         self.include_self_interactions = include_self_interactions
         self.endpoint = endpoint
 
-        self._gamma = -0.5 / (self.width  ** 2)
-
     def call(self, distance_matrix):
         distances = K.expand_dims(distance_matrix, -1)
         mu = keras_utils.linspace(self.min_value, self.max_value, self._n_centers,
                                   endpoint=self.endpoint)
         mu = K.reshape(mu, (1, 1, 1, -1))
-
-        gaussians = K.exp(self._gamma * K.square(distances - mu))
+        values = self.kernel_func(distances, mu)
 
         if not self.include_self_interactions:
             mask = K.cast(distances >= self.self_thresh, K.floatx())
-            gaussians *= mask
+            values *= mask
 
-        return gaussians
+        return values
+
+    def kernel_func(self, inputs, centres):
+        raise NotImplementedError
 
     def compute_output_shape(self, distance_matrix_shape):
         return (distance_matrix_shape[0],
@@ -130,8 +126,70 @@ class GaussianBasis(Layer):
             'include_self_interactions': self.include_self_interactions,
             'endpoint': self.endpoint
         }
-        base_config = super(GaussianBasis, self).get_config()
+        base_config = super(KernelBasis, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+class GaussianBasis(KernelBasis):
+    """Expand distance matrix into Gaussians of width=width, spacing=spacing,
+    starting at min_value ending at max_value (inclusive if endpoint=True).
+
+        -(x - u)^2
+    exp(----------)
+        2 * (ws)^2
+
+    where: u is linspace(min_value, max_value, ceil((max_value - min_value) / width))
+           w is width
+           s is the spacing
+
+    Input: distance_matrix (batch, atoms, atoms)
+    Output: distance_matrix expanded into Gaussian basis set
+
+    Args:
+        min_value (float, optional): minimum value
+        max_value (float, optional): maximum value (non-inclusive)
+        width (float, optional): width of Gaussians
+        spacing (float, optional): spacing between Gaussians
+        self_thresh (float, optional): value below which a distance is
+            considered to be a self interaction (i.e. zero)
+        include_self_interactions (bool, optional): whether or not to include
+            self-interactions (i.e. distance is zero)
+                (batch, atoms, atoms, n_gaussians)
+    """
+    def kernel_func(self, inputs, centres):
+        gamma = -0.5 / ((self.width * self.spacing)  ** 2)
+        return K.exp(gamma * K.square(inputs - centres))
+
+
+class TriangularBasis(KernelBasis):
+    """Expand distance matrix into triangles of width=width, spacing=spacing,
+    starting at min_value ending at max_value (inclusive if endpoint=True).
+
+          1
+    1 - -----|x - u|
+         2ws
+
+    where: u is linspace(min_value, max_value, ceil((max_value - min_value) / width))
+           w is width
+           s is the spacing
+
+    Input: distance_matrix (batch, atoms, atoms)
+    Output: distance_matrix expanded into Gaussian basis set
+
+    Args:
+        min_value (float, optional): minimum value
+        max_value (float, optional): maximum value (non-inclusive)
+        width (float, optional): width of triangles
+        spacing (float, optional): spacing between triangles
+        self_thresh (float, optional): value below which a distance is
+            considered to be a self interaction (i.e. zero)
+        include_self_interactions (bool, optional): whether or not to include
+            self-interactions (i.e. distance is zero)
+                (batch, atoms, atoms, n_triangles)
+    """
+    def kernel_func(self, inputs, centres):
+        gamma = -0.5 / (self.width * self.spacing)
+        return 1 + self._gamma * K.abs(inputs - centres)
 
 
 class AtomicNumberBasis(Layer):

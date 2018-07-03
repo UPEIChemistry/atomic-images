@@ -54,7 +54,7 @@ def indices(one_hot_values, axis=-1):
     return np.argmax(one_hot_values, axis=axis)
 
 
-def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.1,
+def expand_gaussians(dist, min_value=-1, max_value=9, width=2.0, spacing=0.2,
                      self_thresh=1e-5, include_self_interactions=True,
                      endpoint=False, return_mu=False):
     """Expand distance matrix into Gaussians of width=width, spacing=spacing,
@@ -62,7 +62,8 @@ def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.1,
 
         -(x - u)^2
     exp(----------)  where: u is np.linspace(min_value, max_value, ceil((max_value - min_value) / spacing))
-          2 * w^2           w is width
+        2 * (ws)^2          w is width
+                            s is spacing
 
     Args:
         dist (numpy.ndarray): distance matrix (shape: (batch, atoms ,atoms))
@@ -87,7 +88,7 @@ def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.1,
     # Reshape mu
     mu_eff = np.reshape(mu, (1, 1, 1, -1))
 
-    gamma = -0.5 / (width ** 2)
+    gamma = -0.5 / ((width * spacing) ** 2)
     gaussians = np.exp(gamma * (np.square(mu_eff - dist)))
 
     if not include_self_interactions:
