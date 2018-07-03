@@ -81,7 +81,7 @@ class KernelBasis(Layer):
             self-interactions (i.e. distance is zero)
                 (batch, atoms, atoms, n_gaussians)
     """
-    def __init__(self, min_value=-1, max_value=9, width=2.0,
+    def __init__(self, min_value=-1, max_value=9, width=0.2,
                  spacing=0.2, self_thresh=1e-5, include_self_interactions=True,
                  endpoint=False, **kwargs):
         super(KernelBasis, self).__init__(**kwargs)
@@ -136,11 +136,10 @@ class GaussianBasis(KernelBasis):
 
         -(x - u)^2
     exp(----------)
-        2 * (ws)^2
+        2 * w^2
 
     where: u is linspace(min_value, max_value, ceil((max_value - min_value) / width))
            w is width
-           s is the spacing
 
     Input: distance_matrix (batch, atoms, atoms)
     Output: distance_matrix expanded into Gaussian basis set
@@ -157,7 +156,7 @@ class GaussianBasis(KernelBasis):
                 (batch, atoms, atoms, n_gaussians)
     """
     def kernel_func(self, inputs, centres):
-        gamma = -0.5 / ((self.width * self.spacing)  ** 2)
+        gamma = -0.5 / (self.width  ** 2)
         return K.exp(gamma * K.square(inputs - centres))
 
 
@@ -167,11 +166,10 @@ class TriangularBasis(KernelBasis):
 
           1
     1 - -----|x - u|
-         2ws
+         2w
 
     where: u is linspace(min_value, max_value, ceil((max_value - min_value) / width))
            w is width
-           s is the spacing
 
     Input: distance_matrix (batch, atoms, atoms)
     Output: distance_matrix expanded into Gaussian basis set
@@ -188,8 +186,8 @@ class TriangularBasis(KernelBasis):
                 (batch, atoms, atoms, n_triangles)
     """
     def kernel_func(self, inputs, centres):
-        gamma = -0.5 / (self.width * self.spacing)
-        return 1 + self._gamma * K.abs(inputs - centres)
+        gamma = -0.5 / self.width
+        return 1 + gamma * K.abs(inputs - centres)
 
 
 class AtomicNumberBasis(Layer):
