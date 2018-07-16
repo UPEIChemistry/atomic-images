@@ -100,6 +100,55 @@ def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
         return gaussians
 
 
+def expand_triangles(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
+                     self_thresh=1e-5, include_self_interactions=True,
+                     endpoint=False, return_mu=False):
+    """Expand distance matrix into triangles of width=width, spacing=spacing,
+    starting at min_value ending at max_value (inclusive if endpoint=True).
+
+                1.
+    max(0, 1 - ---- | x - u |)
+                2w
+
+    where: u is np.linspace(min_value, max_value, ceil((max_value - min_value) / spacing))
+           w is width
+
+    Args:
+        dist (numpy.ndarray): distance matrix (shape: (batch, atoms ,atoms))
+        min_value (float, optional): minimum value
+        max_value (float, optional): maximum value (non-inclusive)
+        width (float, optional): width of Gaussians
+        spacing (float, optional): spacing between Gaussians
+        self_thresh (float, optional): value below which a distance is
+            considered to be a self interaction (i.e. zero)
+        include_self_interactions (bool, optional): whether or not to include
+            self-interactions (i.e. distance is zero)
+        return_mu (bool, optional): whether or not to return the grid of means
+
+    Returns:
+        np.ndarray: expanded distance matrix (shape: (batch, atoms, atoms, n_triangles))
+        np.ndarray: if return_mu is True, also returns the grid of means
+    """
+    n_centers = int(np.ceil((max_value - min_value) / spacing))
+    dist = np.expand_dims(dist, axis=-1)
+    mu = np.linspace(min_value, max_value, n_centers, endpoint=endpoint)
+
+    # Reshape mu
+    mu_eff = np.reshape(mu, (1, 1, 1, -1))
+
+    scaling = (0.5 / width)
+    triangles = np.maximum(0, 1 - scaling * np.abs(mu_eff - dist))
+
+    if not include_self_interactions:
+        mask = (dist >= self_thresh).astype(float)
+        triangles *= mask
+
+    if return_mu:
+        return triangles, mu
+    else:
+        return triangles
+
+
 def expand_atomic_numbers(gaussians, one_hot_z, zero_dummy_atoms=False):
     """Expands Gaussians into one more dimension representing atomic number.
 
