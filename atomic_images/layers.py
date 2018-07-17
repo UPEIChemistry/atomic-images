@@ -56,6 +56,7 @@ class DistanceMatrix(Layer):
 
         sum_squares = K.sum(K.square(v2 - v1), axis=-1)
         sqrt = K.sqrt(sum_squares + K.epsilon())
+        K.switch(sqrt >= K.epsilon(), sqrt, K.zeros_like(sqrt))
         return sqrt
 
     def compute_output_shape(self, positions_shape):
