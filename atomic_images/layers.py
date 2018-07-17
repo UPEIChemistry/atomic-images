@@ -54,10 +54,9 @@ class DistanceMatrix(Layer):
         v1 = K.expand_dims(positions, axis=2)
         v2 = K.expand_dims(positions, axis=1)
 
-        diff = v2 - v1
-        sq_diff = K.square(diff)
-        summed = K.sum(sq_diff, axis=-1)
-        return K.sqrt(summed)
+        sum_squares = K.sum(K.square(v2 - v1), axis=-1)
+        sqrt = K.sqrt(sum_squares + K.epsilon())
+        return sqrt
 
     def compute_output_shape(self, positions_shape):
         return (positions_shape[0], positions_shape[1], positions_shape[1])
