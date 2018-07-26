@@ -268,8 +268,7 @@ class Unstandardization(Layer):
         sigma (float, list, or np.ndarray): the standard deviation
             values by which to scale the inputs to this layer
     """
-    def __init__(self, mu, sigma, trainable=False, **kwargs):
-        per_type = kwargs.pop('per_type', None)
+    def __init__(self, mu, sigma, trainable=False, per_type=None, **kwargs):
         super(Unstandardization, self).__init__(trainable=trainable, **kwargs)
         self.init_mu = mu
         self.init_sigma = sigma
@@ -363,7 +362,8 @@ class Unstandardization(Layer):
 
         config = {
             'mu': mu,
-            'sigma': sigma
+            'sigma': sigma,
+            'per_type': self.per_type
         }
         base_config = super(Unstandardization, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
