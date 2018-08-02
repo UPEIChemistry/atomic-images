@@ -25,17 +25,14 @@ def distance_matrix(positions):
     """Expand Cartesian coordinates into a distance matrix
 
     Args:
-        positions (numpy.ndarray): array of positions (shape: (batch, atoms, 3))
+        positions (numpy.ndarray): array of positions (shape: (..., atoms, 3))
 
     Returns:
-        numpy.ndarray: the distance matrix (shape: (batch, atoms, atoms))
+        numpy.ndarray: the distance matrix (shape: (..., atoms, atoms))
     """
-    v1 = np.expand_dims(positions, axis=2)
-    v2 = np.expand_dims(positions, axis=1)
-
-    diff = v2 - v1
-    sq_diff = np.square(diff)
-    summed = np.sum(sq_diff, axis=-1)
+    v1 = np.expand_dims(positions, axis=-2)
+    v2 = np.expand_dims(positions, axis=-3)
+    summed = np.sum(np.square(v2 - v1), axis=-1)
     return np.sqrt(summed)
 
 

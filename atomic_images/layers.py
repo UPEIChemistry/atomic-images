@@ -45,14 +45,14 @@ class DistanceMatrix(Layer):
 
     Expands Cartesian coordinates into a distance matrix.
 
-    Input: coordinates (batch, atoms, 3)
-    Output: distance matrix (batch, atoms, atoms)
+    Input: coordinates (..., atoms, 3)
+    Output: distance matrix (..., atoms, atoms)
     """
     def call(self, positions):
         # `positions` should be Cartesian coordinates of shape
-        #    (batch, atoms, 3)
-        v1 = K.expand_dims(positions, axis=2)
-        v2 = K.expand_dims(positions, axis=1)
+        #    (..., atoms, 3)
+        v1 = K.expand_dims(positions, axis=-2)
+        v2 = K.expand_dims(positions, axis=-3)
 
         sum_squares = K.sum(K.square(v2 - v1), axis=-1)
         sqrt = K.sqrt(sum_squares + K.epsilon())
@@ -60,7 +60,7 @@ class DistanceMatrix(Layer):
         return sqrt
 
     def compute_output_shape(self, positions_shape):
-        return (positions_shape[0], positions_shape[1], positions_shape[1])
+        return positions_shape[0:-2] + (positions_shape[-2], positions_shape[-2])
 
 
 class KernelBasis(Layer):
