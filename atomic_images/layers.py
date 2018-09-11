@@ -1,7 +1,7 @@
 import numpy as np
 from keras import backend as K
 from keras.initializers import Constant as ConstantInit
-from keras.layers import Layer
+from keras.layers import Layer, Lambda
 
 from atomic_images import keras_utils
 
@@ -66,26 +66,113 @@ class DistanceMatrix(Layer):
         return positions_shape[0:-2] + (positions_shape[-2], positions_shape[-2])
 
 
+class AngleTensor(Layer):
+    """
+    Angle tensor layer
+
+    Calculate the tensor containing all possible angles between
+    cartesian positions (between [0, 180] degrees)
+
+    The returned tensor is indexed as follows:
+        the first n_points axis is the central point forming the angle
+        the latter two n_points axes are the two other points
+
+    The tensor should be symmetric about a permutation of the last two indices.
+
+    Input: coordinates (..., atoms, 3)
+    Output: distance matrix (..., atoms, atoms)
+    """
+    def __init__(self, deg=False, eps=1e-10):
+        super(AngleTensor, self).__init__()
+        self.eps = eps
+        self.deg = deg
+
+        if K.backend() == 'tensorflow':
+            import tensorflow as tf
+            self.arccos = Lambda(tf.acos, output_shape=lambda x: x)
+        else:
+            self.arccos = None
+
+    def call(self, inputs):
+        # `positions` should be Cartesian coordinates of shape
+        #    (..., atoms, 3)
+        positions, dist_matrix = inputs
+
+        n_positions = K.int_shape(positions)[-2]
+
+        v1 = K.expand_dims(positions, axis=-2)
+        v2 = K.expand_dims(positions, axis=-3)
+
+        diff = v2 - v1
+        magnitudes = dist_matrix
+        magnitude_products = (
+            K.expand_dims(magnitudes, axis=-1)
+            * K.expand_dims(magnitudes, axis=-2)
+        )
+        dot_prod = K.sum(
+            K.expand_dims(diff, axis=-2) * K.expand_dims(diff, axis=-3),
+            axis=-1
+        )
+        # Avoids division by zero
+        magnitude_products = K.switch(
+            magnitude_products < self.eps,
+            K.ones_like(magnitude_products),
+            magnitude_products
+        )
+
+        # Calculate the angles
+        if self.arccos is None:
+            raise NotImplementedError('AngleTensor not implemented for '
+                                      'backends other than TensorFlow '
+                                      'at this time')
+        angles = self.arccos(dot_prod / magnitude_products)
+
+        # Zero invalid values
+        mask1 = K.reshape(1 - K.eye(n_positions), (1, n_positions, n_positions))
+        mask2 = K.reshape(1 - K.eye(n_positions), (n_positions, 1, n_positions))
+        mask3 = K.reshape(1 - K.eye(n_positions), (n_positions, n_positions, 1))
+        mask = mask1 * mask2 * mask3
+
+        angles = mask * angles
+
+        # Convert to degrees if asked
+        if self.deg:
+            angles *= 180 / np.pi
+
+        return angles
+
+    def compute_output_shape(self, input_shapes):
+        positions_shape, _ = input_shapes
+        return positions_shape[0:-2] + (positions_shape[-2], positions_shape[-2], positions_shape[-2])
+
+    def get_config(self):
+        config = {
+            'deg': self.deg,
+            'eps': self.eps
+        }
+        base_config = super(AngleTensor, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
 #
 # Kernel functions
 #
 class KernelBasis(Layer):
-    """Expand distance matrix using kernel of width=width, spacing=spacing,
+    """Expand tensor using kernel of width=width, spacing=spacing,
     starting at min_value ending at max_value (inclusive if endpoint=True).
 
-    Input: distance_matrix (batch, atoms, atoms)
-    Output: distance_matrix expanded into kernel basis set
+    Input: tensor (batch, atoms, [atoms, [atoms...])
+    Output: tensor expanded into kernel basis set (batch, atoms, [atoms, [atoms...]], n_gaussians)
 
     Args:
         min_value (float, optional): minimum value
         max_value (float, optional): maximum value (non-inclusive)
-        width (float, optional): width of Gaussians
-        spacing (float, optional): spacing between Gaussians
+        width (float, optional): width of kernel functions
+        spacing (float, optional): spacing between kernel functions
         self_thresh (float, optional): value below which a distance is
             considered to be a self interaction (i.e. zero)
         include_self_interactions (bool, optional): whether or not to include
             self-interactions (i.e. distance is zero)
-                (batch, atoms, atoms, n_gaussians)
     """
     def __init__(self, min_value=-1, max_value=9, width=0.2,
                  spacing=0.2, self_thresh=1e-5, include_self_interactions=True,
@@ -100,15 +187,17 @@ class KernelBasis(Layer):
         self.include_self_interactions = include_self_interactions
         self.endpoint = endpoint
 
-    def call(self, distance_matrix):
-        distances = K.expand_dims(distance_matrix, -1)
+    def call(self, in_tensor):
+        in_tensor = K.expand_dims(in_tensor, -1)
         mu = keras_utils.linspace(self.min_value, self.max_value, self._n_centers,
                                   endpoint=self.endpoint)
-        mu = K.reshape(mu, (1, 1, 1, -1))
-        values = self.kernel_func(distances, mu)
+
+        mu_prefix_shape = tuple([1 for _ in range(len(K.int_shape(in_tensor)) - 1)])
+        mu = K.reshape(mu, mu_prefix_shape + (-1,))
+        values = self.kernel_func(in_tensor, mu)
 
         if not self.include_self_interactions:
-            mask = K.cast(distances >= self.self_thresh, K.floatx())
+            mask = K.cast(in_tensor >= self.self_thresh, K.floatx())
             values *= mask
 
         return values
@@ -116,11 +205,8 @@ class KernelBasis(Layer):
     def kernel_func(self, inputs, centres):
         raise NotImplementedError
 
-    def compute_output_shape(self, distance_matrix_shape):
-        return (distance_matrix_shape[0],
-                distance_matrix_shape[1],
-                distance_matrix_shape[2],
-                self._n_centers,)
+    def compute_output_shape(self, in_tensor_shape):
+        return in_tensor_shape + (self._n_centers,)
 
     def get_config(self):
         config = {

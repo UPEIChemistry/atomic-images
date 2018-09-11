@@ -6,7 +6,7 @@ import numpy as np
 from atomic_images.np_utils import (cosine_cutoff, distance_matrix,
                                     expand_atomic_numbers, expand_gaussians,
                                     long_tanh_cutoff, one_hot, tanh_cutoff,
-                                    zero_dummy_atoms)
+                                    zero_dummy_atoms, expand_triangles)
 
 
 def main(args):
@@ -57,7 +57,10 @@ def main(args):
 
     # Expands distances into a Gaussian basis set, returning mu for plotting
     # purposes.
-    gaussians, mu = expand_gaussians(dist_matrix, return_mu=True)
+    if args.kernel == 'gaussian':
+        gaussians, mu = expand_gaussians(dist_matrix, return_mu=True)
+    elif args.kernel == 'triangle':
+        gaussians, mu = expand_triangles(dist_matrix, return_mu=True)
 
     if args.cutoff_type == 'tanh':
         gaussians = tanh_cutoff(dist_matrix, gaussians, cutoff)
@@ -136,4 +139,8 @@ if __name__ == '__main__':
                         help='the type of cutoff function',
                         choices=['none', 'tanh', 'cos', 'long_tanh'],
                         default='none')
+    parser.add_argument('--kernel',
+                        default='gaussian',
+                        choices=['gaussian', 'triangle'],
+                        help='kernel function to use')
     main(parser.parse_args())

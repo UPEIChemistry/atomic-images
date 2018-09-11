@@ -36,6 +36,59 @@ def distance_matrix(positions):
     return np.sqrt(summed)
 
 
+def angle_tensor(positions, deg=False, eps=1e-10):
+    """Calculate the tensor containing all possible angles between
+    cartesian positions.
+
+    The returned tensor is indexed as follows:
+        the first n_points axis is the central point forming the angle
+        the latter two n_points axes are the two other points
+
+    The tensor should be symmetric about a permutation of the last two indices.
+
+    Args:
+        positions (numpy.ndarray): array of positions (shape: (..., n_points, 3))
+        deg (bool): output in degrees if True
+        eps (float, optional): a fuzz factor for the divison by magnitudes
+
+    Returns:
+        numpy.ndarray: the angle tensor (shape: (..., n_points, n_points, n_points))
+    """
+    v1 = np.expand_dims(positions, axis=-2)
+    v2 = np.expand_dims(positions, axis=-3)
+
+    diff = v2 - v1
+    magnitudes = distance_matrix(positions)
+    magnitude_products = (
+        np.expand_dims(magnitudes, axis=-1)
+        * np.expand_dims(magnitudes, axis=-2)
+    )
+    dot_prod = np.sum(
+        np.expand_dims(diff, axis=-2) * np.expand_dims(diff, axis=-3),
+        axis=-1
+    )
+    # Avoids division by zero
+    magnitude_products[magnitude_products < eps] = 1.0
+
+    # Calculate the angles
+    angles = np.arccos(dot_prod / magnitude_products)
+
+    # Zero invalid values
+    n_positions = positions.shape[-2]
+    mask1 = np.reshape(1 - np.eye(n_positions, dtype=int), (1, n_positions, n_positions))
+    mask2 = np.reshape(1 - np.eye(n_positions, dtype=int), (n_positions, 1, n_positions))
+    mask3 = np.reshape(1 - np.eye(n_positions, dtype=int), (n_positions, n_positions, 1))
+    mask = mask1 * mask2 * mask3
+
+    angles *= mask
+
+    # Convert to degrees if asked
+    if deg:
+        angles *= 180 / np.pi
+
+    return angles
+
+
 def indices(one_hot_values, axis=-1):
     """Convert one-hot vectors to indices
 
@@ -51,7 +104,7 @@ def indices(one_hot_values, axis=-1):
     return np.argmax(one_hot_values, axis=axis)
 
 
-def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
+def expand_gaussians(in_tensor, min_value=-1, max_value=9, width=0.2, spacing=0.2,
                      self_thresh=1e-5, include_self_interactions=True,
                      endpoint=False, return_mu=False):
     """Expand distance matrix into Gaussians of width=width, spacing=spacing,
@@ -62,7 +115,7 @@ def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
           2 * w^2           w is width
 
     Args:
-        dist (numpy.ndarray): distance matrix (shape: (batch, atoms ,atoms))
+        in_tensor (numpy.ndarray): distance matrix (shape: (batch, atoms ,atoms))
         min_value (float, optional): minimum value
         max_value (float, optional): maximum value (non-inclusive)
         width (float, optional): width of Gaussians
@@ -74,21 +127,22 @@ def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
         return_mu (bool, optional): whether or not to return the grid of means
 
     Returns:
-        np.ndarray: expanded distance matrix (shape: (batch, atoms, atoms, n_gaussians))
+        np.ndarray: expanded in_tensor (shape: (batch, atoms, atoms, n_gaussians))
         np.ndarray: if return_mu is True, also returns the grid of means
     """
     n_centers = int(np.ceil((max_value - min_value) / spacing))
-    dist = np.expand_dims(dist, axis=-1)
+    in_tensor = np.expand_dims(in_tensor, axis=-1)
     mu = np.linspace(min_value, max_value, n_centers, endpoint=endpoint)
 
     # Reshape mu
-    mu_eff = np.reshape(mu, (1, 1, 1, -1))
+    mu_shape_prefix = tuple([1 for _ in range(len(in_tensor.shape) - 1)])
+    mu_eff = np.reshape(mu, mu_shape_prefix + (-1,))
 
     gamma = -0.5 / (width ** 2)
-    gaussians = np.exp(gamma * (np.square(mu_eff - dist)))
+    gaussians = np.exp(gamma * (np.square(mu_eff - in_tensor)))
 
     if not include_self_interactions:
-        mask = (dist >= self_thresh).astype(float)
+        mask = (in_tensor >= self_thresh).astype(float)
         gaussians *= mask
 
     if return_mu:
@@ -97,7 +151,7 @@ def expand_gaussians(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
         return gaussians
 
 
-def expand_triangles(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
+def expand_triangles(in_tensor, min_value=-1, max_value=9, width=0.2, spacing=0.2,
                      self_thresh=1e-5, include_self_interactions=True,
                      endpoint=False, return_mu=False):
     """Expand distance matrix into triangles of width=width, spacing=spacing,
@@ -111,7 +165,7 @@ def expand_triangles(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
            w is width
 
     Args:
-        dist (numpy.ndarray): distance matrix (shape: (batch, atoms ,atoms))
+        in_tensor (numpy.ndarray): distance matrix (shape: (batch, atoms ,atoms))
         min_value (float, optional): minimum value
         max_value (float, optional): maximum value (non-inclusive)
         width (float, optional): width of Gaussians
@@ -127,17 +181,18 @@ def expand_triangles(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
         np.ndarray: if return_mu is True, also returns the grid of means
     """
     n_centers = int(np.ceil((max_value - min_value) / spacing))
-    dist = np.expand_dims(dist, axis=-1)
+    in_tensor = np.expand_dims(in_tensor, axis=-1)
     mu = np.linspace(min_value, max_value, n_centers, endpoint=endpoint)
 
     # Reshape mu
-    mu_eff = np.reshape(mu, (1, 1, 1, -1))
+    mu_shape_prefix = tuple([1 for _ in range(len(in_tensor.shape) - 1)])
+    mu_eff = np.reshape(mu, mu_shape_prefix + (-1,))
 
     scaling = (0.5 / width)
-    triangles = np.maximum(0, 1 - scaling * np.abs(mu_eff - dist))
+    triangles = np.maximum(0, 1 - scaling * np.abs(mu_eff - in_tensor))
 
     if not include_self_interactions:
-        mask = (dist >= self_thresh).astype(float)
+        mask = (in_tensor >= self_thresh).astype(float)
         triangles *= mask
 
     if return_mu:
