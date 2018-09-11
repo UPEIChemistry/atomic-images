@@ -146,6 +146,41 @@ def expand_triangles(dist, min_value=-1, max_value=9, width=0.2, spacing=0.2,
         return triangles
 
 
+def cosine_cutoff(d_mat, gaussians, cutoff):
+    cos_component = 0.5 * (1 + np.cos(np.pi * d_mat / cutoff))
+    cutoffs = np.where(
+        d_mat <= cutoff,
+        cos_component,
+        np.zeros_like(d_mat)
+    )
+    cutoffs = np.expand_dims(cutoffs, axis=-1)
+    return gaussians * cutoffs
+
+
+def tanh_cutoff(d_mat, gaussians, cutoff):
+    norm_factor = 1 / (np.tanh(1) ** 3)
+    tanh_component = (np.tanh(1 - d_mat / cutoff)) ** 3
+    cutoffs = np.where(
+        d_mat <= cutoff,
+        norm_factor * tanh_component,
+        np.zeros_like(d_mat)
+    )
+    cutoffs = np.expand_dims(cutoffs, axis=-1)
+    return gaussians * cutoffs
+
+
+def long_tanh_cutoff(d_mat, gaussians, cutoff):
+    norm_factor = 1 / (np.tanh(cutoff) ** 3)
+    tanh_component = (np.tanh(cutoff - d_mat)) ** 3
+    cutoffs = np.where(
+        d_mat <= cutoff,
+        norm_factor * tanh_component,
+        np.zeros_like(d_mat)
+    )
+    cutoffs = np.expand_dims(cutoffs, axis=-1)
+    return gaussians * cutoffs
+
+
 def expand_atomic_numbers(gaussians, one_hot_z, zero_dummy_atoms=False):
     """Expands Gaussians into one more dimension representing atomic number.
 

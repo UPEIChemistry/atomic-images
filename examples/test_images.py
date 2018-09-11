@@ -1,11 +1,15 @@
-import numpy as np
+import argparse
 
 import matplotlib.pyplot as plt
-from atomic_images.np_utils import (distance_matrix, expand_atomic_numbers,
-                                    expand_gaussians, one_hot, zero_dummy_atoms)
+import numpy as np
+
+from atomic_images.np_utils import (cosine_cutoff, distance_matrix,
+                                    expand_atomic_numbers, expand_gaussians,
+                                    long_tanh_cutoff, one_hot, tanh_cutoff,
+                                    zero_dummy_atoms)
 
 
-def main():
+def main(args):
     # Positions and atomic numbers for para-chlorobenzoic acid and methane
     r = np.array([[
         [-0.7320000, 1.1400000, 0.1000000],
@@ -43,6 +47,7 @@ def main():
     ]])
     z = np.array([[6, 6, 6, 6, 6, 6, 6, 8, 8, 17, 1, 1, 1, 1, 1],
                   [6, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
+    cutoff = args.cutoff
 
     # Converts index based atomic numbers to one-hot
     one_hot_z = one_hot(z)
@@ -54,6 +59,13 @@ def main():
     # purposes.
     gaussians, mu = expand_gaussians(dist_matrix, return_mu=True)
 
+    if args.cutoff_type == 'tanh':
+        gaussians = tanh_cutoff(dist_matrix, gaussians, cutoff)
+    elif args.cutoff_type == 'long_tanh':
+        gaussians = long_tanh_cutoff(dist_matrix, gaussians, cutoff)
+    elif args.cutoff_type == 'cos':
+        gaussians = cosine_cutoff(dist_matrix, gaussians, cutoff)
+
     # Sets elements of dummy atoms (z = 0) to zero
     interaction_images = zero_dummy_atoms(gaussians, one_hot_z, atom_axes=[1, 2])
 
@@ -61,7 +73,7 @@ def main():
     interaction_images = expand_atomic_numbers(interaction_images, one_hot_z, zero_dummy_atoms=False)
 
     # Which molecule to visualize
-    mol_i = 1
+    mol_i = 0
 
     # Show image before summing
     # Corresponds to an image of an "interaction" between two atoms
@@ -115,4 +127,13 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cutoff',
+                        type=float,
+                        default=15.0,
+                        help='the cutoff to use')
+    parser.add_argument('--cutoff-type',
+                        help='the type of cutoff function',
+                        choices=['none', 'tanh', 'cos', 'long_tanh'],
+                        default='none')
+    main(parser.parse_args())

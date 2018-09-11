@@ -6,6 +6,9 @@ from keras.layers import Layer
 from atomic_images import keras_utils
 
 
+#
+# Basic math functions
+#
 class OneHot(Layer):
     """One-hot atomic number layer
 
@@ -63,6 +66,9 @@ class DistanceMatrix(Layer):
         return positions_shape[0:-2] + (positions_shape[-2], positions_shape[-2])
 
 
+#
+# Kernel functions
+#
 class KernelBasis(Layer):
     """Expand distance matrix using kernel of width=width, spacing=spacing,
     starting at min_value ending at max_value (inclusive if endpoint=True).
@@ -142,7 +148,7 @@ class GaussianBasis(KernelBasis):
            w is width
 
     Input: distance_matrix (batch, atoms, atoms)
-    Output: distance_matrix expanded into Gaussian basis set
+    Output: distance_matrix expanded into Gaussian basis set (batch, atoms, atoms, n_centres)
 
     Args:
         min_value (float, optional): minimum value
@@ -172,7 +178,7 @@ class TriangularBasis(KernelBasis):
            w is width
 
     Input: distance_matrix (batch, atoms, atoms)
-    Output: distance_matrix expanded into Gaussian basis set
+    Output: distance_matrix expanded into Triangular basis set (batch, atoms, atoms, n_centres)
 
     Args:
         min_value (float, optional): minimum value
@@ -190,6 +196,93 @@ class TriangularBasis(KernelBasis):
         return 1 + gamma * K.abs(inputs - centres)
 
 
+#
+# Cutoff functions
+#
+class CutoffLayer(Layer):
+    """Base layer for cutoff functions.
+
+    Applies a cutoff function to the expanded distance matrix
+
+    Inputs:
+        distance_matrix (batch, atoms, atoms)
+        basis_functions (batch, atoms, atoms, n_centres)
+    Output: basis_functions with cutoff function multiplied (batch, atoms, atoms, n_centres)
+    """
+    def __init__(self, cutoff):
+        self.cutoff = cutoff
+
+    def call(self, inputs):
+        distance_matrix, basis_functions = inputs
+
+        cutoffs = self.cutoff_function(distance_matrix)
+        cutoffs = K.expand_dims(cutoffs, axis=-1)
+
+        return basis_functions * cutoffs
+
+    def cutoff_function(self, distance_matrix):
+        """Function responsible for the cutoff. It should also return zeros
+        for anything greater than the cutoff.
+
+        Args:
+            distance_matrix (Tensor): the distance matrix tensor
+        """
+        raise NotImplementedError
+
+    def compute_output_shape(self, input_shapes):
+        _, basis_functions_shape = input_shapes
+        return basis_functions_shape
+
+    def get_config(self):
+        config = {
+            'cutoff': self.cutoff
+        }
+        base_config = super(CutoffLayer, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+class CosineCutoff(CutoffLayer):
+    """The cosine cutoff originally proposed by Behler et al. for ACSFs.
+    """
+    def cutoff_function(self, distance_matrix):
+        cos_component = 0.5 * (1 + K.cos(np.pi * distance_matrix / self.cutoff))
+        return K.switch(
+            distance_matrix <= self.cutoff,
+            cos_component,
+            K.zeros_like(distance_matrix)
+        )
+
+
+class TanhCutoff(CutoffLayer):
+    """Alternate tanh^3 cutoff function mentioned in some of the ACSF papers.
+    """
+    def cutoff_function(self, distance_matrix):
+        normalization_factor = 1 / (K.tanh(1) ** 3)
+        tanh_component = (K.tanh(1 - (distance_matrix / self.cutoff))) ** 3
+        return K.switch(
+            distance_matrix <= self.cutoff,
+            normalization_factor * tanh_component,
+            K.zeros_like(distance_matrix)
+        )
+
+
+class LongTanhCutoff(CutoffLayer):
+    """Custom tanh cutoff function that keeps symmetry functions relatively unscaled
+    longer than the previously proposed tanh function
+    """
+    def cutoff_function(self, distance_matrix):
+        normalization_factor = 1 / (K.tanh(self.cutoff) ** 3)
+        tanh_component = (K.tanh(self.cutoff - distance_matrix)) ** 3
+        return K.switch(
+            distance_matrix <= self.cutoff,
+            normalization_factor * tanh_component,
+            K.zeros_like(distance_matrix)
+        )
+
+
+#
+# Atom-related functions
+#
 class AtomicNumberBasis(Layer):
     """Expands Gaussian matrix into the one-hot atomic numbers basis
 
@@ -229,6 +322,9 @@ class AtomicNumberBasis(Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+#
+# Normalization-related layers
+#
 class Unstandardization(Layer):
     """
     Offsets energies by mean and standard deviation (optionally, per-atom)
@@ -406,6 +502,9 @@ class AtomRefOffset(Unstandardization):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+#
+# Dummy atom-related layers
+#
 class DummyAtomMasking(Layer):
     """
     Masks dummy atoms (atomic number = 0) with zeros
