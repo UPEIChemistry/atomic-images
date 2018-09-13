@@ -572,6 +572,7 @@ class AtomRefOffset(Unstandardization):
         if not self.add_offset:
             self.atom_ref *= -1
 
+        kwargs.pop('per_type', None)
         super(AtomRefOffset, self).__init__(
             mu=atom_ref,
             sigma=kwargs.pop('sigma', 1),
