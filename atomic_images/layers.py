@@ -344,8 +344,8 @@ class TanhCutoff(CutoffLayer):
     """Alternate tanh^3 cutoff function mentioned in some of the ACSF papers.
     """
     def cutoff_function(self, distance_matrix):
-        normalization_factor = 1 / (K.tanh(1) ** 3)
-        tanh_component = (K.tanh(1 - (distance_matrix / self.cutoff))) ** 3
+        normalization_factor = 1.0 / (K.tanh(1.0) ** 3)
+        tanh_component = (K.tanh(1.0 - (distance_matrix / self.cutoff))) ** 3
         return K.switch(
             distance_matrix <= self.cutoff,
             normalization_factor * tanh_component,
@@ -358,7 +358,7 @@ class LongTanhCutoff(CutoffLayer):
     longer than the previously proposed tanh function
     """
     def cutoff_function(self, distance_matrix):
-        normalization_factor = 1 / (K.tanh(self.cutoff) ** 3)
+        normalization_factor = 1.0 / (K.tanh(float(self.cutoff)) ** 3)
         tanh_component = (K.tanh(self.cutoff - distance_matrix)) ** 3
         return K.switch(
             distance_matrix <= self.cutoff,
