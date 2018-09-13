@@ -296,6 +296,7 @@ class CutoffLayer(Layer):
     Output: basis_functions with cutoff function multiplied (batch, atoms, atoms, n_centres)
     """
     def __init__(self, cutoff):
+        super(CutoffLayer, self).__init__()
         self.cutoff = cutoff
 
     def call(self, inputs):
