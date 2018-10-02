@@ -15,9 +15,8 @@ def one_hot(indices_values, max_index=None):
     """
 
     if max_index is None:
-        eye_mat = np.eye(np.max(indices_values) + 1)
-    else:
-        eye_mat = np.eye(max_index + 1)
+        max_index = np.max(indices_values)
+    eye_mat = np.eye(max_index + 1)
     return eye_mat[indices_values]
 
 
@@ -259,7 +258,22 @@ def expand_atomic_numbers(gaussians, one_hot_z, zero_dummy_atoms=False):
     return gaussians * one_hot_z
 
 
-def zero_dummy_atoms(values, z, atom_axes=1):
+def select_atoms(values, z, dummy_index, atom_axes=1):
+    """Convenience function for zeroing all values
+    except ones of type `dummy_index`
+
+    All arguments are the same as `zero_dummy_atoms`
+    """
+    return zero_dummy_atoms(
+        values=values,
+        z=z,
+        dummy_index=dummy_index,
+        atom_axes=atom_axes,
+        invert_mask=True
+    )
+
+
+def zero_dummy_atoms(values, z, atom_axes=1, dummy_index=0, invert_mask=False):
     """Zeros values where atomic numbers are zero along one or more
     axes
 
@@ -268,6 +282,11 @@ def zero_dummy_atoms(values, z, atom_axes=1):
         z (numpy.ndarray): atomic numbers (as indices or one-hot)
         atom_axes (int or list, optional): one or more axes to which to
             apply masking
+        dummy_index (int): the index of atoms to mask
+        invert_mask (bool): if False, only zeros the values where
+            `atom == dummy_index` (i.e. keep everything else untouched).
+            If True, zeros all values where atom != dummy_index (i.e.
+            selecting values of element `dummy_index`)
 
     Returns:
         numpy.ndarray: the values, with all values for dummy atoms set to zero
@@ -283,12 +302,15 @@ def zero_dummy_atoms(values, z, atom_axes=1):
     else:
         atomic_numbers = z
 
-    dummy_mask = (atomic_numbers != 0).astype(float)
+    selection_mask = (atomic_numbers != dummy_index)
+    if invert_mask:
+        selection_mask = ~selection_mask
+    selection_mask = selection_mask.astype(float)
 
     # Expand dims as many times as necessary to get 1s in the last
     # dimensions
     for axis in atom_axes:
-        mask = dummy_mask
+        mask = selection_mask
         for _ in range(axis - 1):
             mask = np.expand_dims(mask, axis=1)
         while len(values.shape) != len(mask.shape):
