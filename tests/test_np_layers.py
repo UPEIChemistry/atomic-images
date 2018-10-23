@@ -1,4 +1,4 @@
-from atomic_images import np_utils
+from atomic_images import np_layers
 import numpy as np
 
 
@@ -9,7 +9,7 @@ def test_one_hot():
     ])
 
     assert np.allclose(
-        np_utils.one_hot(indices),
+        np_layers.OneHot(np.max(indices))(indices),
         np.array(
             [
                 [
@@ -36,7 +36,7 @@ def test_distance_matrix():
             [0.0, 1.0, 0.0]
         ]
     ])
-    r_ij = np_utils.distance_matrix(r)
+    r_ij = np_layers.DistanceMatrix()(r)
 
     assert np.allclose(
         r_ij,
@@ -53,25 +53,6 @@ def test_distance_matrix():
     )
 
 
-def test_indices():
-    one_hots = np.array(
-        [
-            [
-                [0, 1, 0],
-                [0, 1, 0]
-            ],
-            [
-                [0, 0, 1],
-                [1, 0, 0]
-            ]
-        ]
-    )
-    assert np.allclose(
-        np.array([[1, 1], [2, 0]]),
-        np_utils.indices(one_hots)
-    )
-
-
 def test_select_atoms():
     values = np.array([
         [
@@ -80,8 +61,9 @@ def test_select_atoms():
         ]
     ])
     atoms = np.array([[1, 2]])
+    one_hot = np_layers.OneHot(np.max(atoms))(atoms)
 
-    selected = np_utils.select_atoms(values, atoms, dummy_index=2)
+    selected = np_layers.SelectAtoms(atom_index=2)([one_hot, values])
     assert np.allclose(selected,
         np.array([
             [

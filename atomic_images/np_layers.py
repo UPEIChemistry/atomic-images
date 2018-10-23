@@ -1,9 +1,25 @@
+"""A module containing numpy implementations of the Keras layers
+"""
 import numpy as np
-from keras import backend as K
-from keras.layers import Layer, Lambda
 
-from atomic_images import keras_utils
 
+class Layer(object):
+    """Dummy layer base class for numpy layers
+    """
+    def __init__(self, *args, **kwargs):
+        self._is_built = False
+
+    def build(self, inputs):
+        pass
+
+    def call(self, inputs):
+        raise NotImplementedError
+
+    def __call__(self, *args, **kwargs):
+        if not self._is_built:
+            self.build(*args, **kwargs)
+            self._is_built = True
+        return self.call(*args, **kwargs)
 
 #
 # Basic math functions
@@ -26,19 +42,8 @@ class OneHot(Layer):
 
     def call(self, inputs):
         atomic_numbers = inputs
-        return K.one_hot(atomic_numbers,
-                         self.max_atomic_number + 1)
-
-    def compute_output_shape(self, input_shapes):
-        atomic_numbers = input_shapes
-        return atomic_numbers + (self.max_atomic_number + 1,)
-
-    def get_config(self):
-        config = {
-            'max_atomic_number': self.max_atomic_number
-        }
-        base_config = super(OneHot, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        eye_mat = np.eye(self.max_atomic_number + 1)
+        return eye_mat[atomic_numbers]
 
 
 class DistanceMatrix(Layer):
@@ -53,16 +58,11 @@ class DistanceMatrix(Layer):
     def call(self, positions):
         # `positions` should be Cartesian coordinates of shape
         #    (..., atoms, 3)
-        v1 = K.expand_dims(positions, axis=-2)
-        v2 = K.expand_dims(positions, axis=-3)
+        v1 = np.expand_dims(positions, axis=-2)
+        v2 = np.expand_dims(positions, axis=-3)
 
-        sum_squares = K.sum(K.square(v2 - v1), axis=-1)
-        sqrt = K.sqrt(sum_squares + K.epsilon())
-        K.switch(sqrt >= K.epsilon(), sqrt, K.zeros_like(sqrt))
-        return sqrt
-
-    def compute_output_shape(self, positions_shape):
-        return positions_shape[0:-2] + (positions_shape[-2], positions_shape[-2])
+        sum_squares = np.sum(np.square(v2 - v1), axis=-1)
+        return np.sqrt(sum_squares)
 
 
 class AngleTensor(Layer):
@@ -86,71 +86,43 @@ class AngleTensor(Layer):
         self.eps = eps
         self.deg = deg
 
-        if K.backend() == 'tensorflow':
-            import tensorflow as tf
-            self.arccos = Lambda(tf.acos, output_shape=lambda x: x)
-        else:
-            self.arccos = None
-
     def call(self, inputs):
         # `positions` should be Cartesian coordinates of shape
         #    (..., atoms, 3)
-        positions, dist_matrix = inputs
+        positions, magnitudes = inputs
 
-        n_positions = K.int_shape(positions)[-2]
-
-        v1 = K.expand_dims(positions, axis=-2)
-        v2 = K.expand_dims(positions, axis=-3)
+        v1 = np.expand_dims(positions, axis=-2)
+        v2 = np.expand_dims(positions, axis=-3)
 
         diff = v2 - v1
-        magnitudes = dist_matrix
         magnitude_products = (
-            K.expand_dims(magnitudes, axis=-1)
-            * K.expand_dims(magnitudes, axis=-2)
+            np.expand_dims(magnitudes, axis=-1)
+            * np.expand_dims(magnitudes, axis=-2)
         )
-        dot_prod = K.sum(
-            K.expand_dims(diff, axis=-2) * K.expand_dims(diff, axis=-3),
+        dot_prod = np.sum(
+            np.expand_dims(diff, axis=-2) * np.expand_dims(diff, axis=-3),
             axis=-1
         )
         # Avoids division by zero
-        magnitude_products = K.switch(
-            magnitude_products < self.eps,
-            K.ones_like(magnitude_products),
-            magnitude_products
-        )
+        magnitude_products[magnitude_products < self.eps] = 1.0
 
         # Calculate the angles
-        if self.arccos is None:
-            raise NotImplementedError('AngleTensor not implemented for '
-                                      'backends other than TensorFlow '
-                                      'at this time')
-        angles = self.arccos(dot_prod / magnitude_products)
+        angles = np.arccos(dot_prod / magnitude_products)
 
         # Zero invalid values
-        mask1 = K.reshape(1 - K.eye(n_positions), (1, n_positions, n_positions))
-        mask2 = K.reshape(1 - K.eye(n_positions), (n_positions, 1, n_positions))
-        mask3 = K.reshape(1 - K.eye(n_positions), (n_positions, n_positions, 1))
+        n_positions = positions.shape[-2]
+        mask1 = np.reshape(1 - np.eye(n_positions, dtype=int), (1, n_positions, n_positions))
+        mask2 = np.reshape(1 - np.eye(n_positions, dtype=int), (n_positions, 1, n_positions))
+        mask3 = np.reshape(1 - np.eye(n_positions, dtype=int), (n_positions, n_positions, 1))
         mask = mask1 * mask2 * mask3
 
-        angles = mask * angles
+        angles *= mask
 
         # Convert to degrees if asked
         if self.deg:
             angles *= 180 / np.pi
 
         return angles
-
-    def compute_output_shape(self, input_shapes):
-        positions_shape, _ = input_shapes
-        return positions_shape[0:-2] + (positions_shape[-2], positions_shape[-2], positions_shape[-2])
-
-    def get_config(self):
-        config = {
-            'deg': self.deg,
-            'eps': self.eps
-        }
-        base_config = super(AngleTensor, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 #
@@ -185,40 +157,25 @@ class KernelBasis(Layer):
         self.self_thresh = self_thresh
         self.include_self_interactions = include_self_interactions
         self.endpoint = endpoint
+        self.mu = None
 
     def call(self, in_tensor):
-        in_tensor = K.expand_dims(in_tensor, -1)
-        mu = keras_utils.linspace(self.min_value, self.max_value, self._n_centers,
-                                  endpoint=self.endpoint)
+        in_tensor = np.expand_dims(in_tensor, -1)
+        self.mu = np.linspace(self.min_value, self.max_value, self._n_centers,
+                              endpoint=self.endpoint)
 
-        mu_prefix_shape = tuple([1 for _ in range(len(K.int_shape(in_tensor)) - 1)])
-        mu = K.reshape(mu, mu_prefix_shape + (-1,))
+        mu_prefix_shape = tuple([1 for _ in range(len(in_tensor.shape) - 1)])
+        mu = np.reshape(self.mu, mu_prefix_shape + (-1,))
         values = self.kernel_func(in_tensor, mu)
 
         if not self.include_self_interactions:
-            mask = K.cast(in_tensor >= self.self_thresh, K.floatx())
+            mask = (in_tensor >= self.self_thresh).astype(in_tensor.dtype)
             values *= mask
 
         return values
 
     def kernel_func(self, inputs, centres):
         raise NotImplementedError
-
-    def compute_output_shape(self, in_tensor_shape):
-        return in_tensor_shape + (self._n_centers,)
-
-    def get_config(self):
-        config = {
-            'width': self.width,
-            'spacing': self.spacing,
-            'min_value': self.min_value,
-            'max_value': self.max_value,
-            'self_thresh': self.self_thresh,
-            'include_self_interactions': self.include_self_interactions,
-            'endpoint': self.endpoint
-        }
-        base_config = super(KernelBasis, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 class GaussianBasis(KernelBasis):
@@ -248,7 +205,7 @@ class GaussianBasis(KernelBasis):
     """
     def kernel_func(self, inputs, centres):
         gamma = -0.5 / (self.width  ** 2)
-        return K.exp(gamma * K.square(inputs - centres))
+        return np.exp(gamma * np.square(inputs - centres))
 
 
 class TriangularBasis(KernelBasis):
@@ -278,7 +235,7 @@ class TriangularBasis(KernelBasis):
     """
     def kernel_func(self, inputs, centres):
         gamma = -0.5 / self.width
-        return 1 + gamma * K.abs(inputs - centres)
+        return 1 + gamma * np.abs(inputs - centres)
 
 
 #
@@ -302,7 +259,7 @@ class CutoffLayer(Layer):
         distance_matrix, basis_functions = inputs
 
         cutoffs = self.cutoff_function(distance_matrix)
-        cutoffs = K.expand_dims(cutoffs, axis=-1)
+        cutoffs = np.expand_dims(cutoffs, axis=-1)
 
         return basis_functions * cutoffs
 
@@ -315,27 +272,16 @@ class CutoffLayer(Layer):
         """
         raise NotImplementedError
 
-    def compute_output_shape(self, input_shapes):
-        _, basis_functions_shape = input_shapes
-        return basis_functions_shape
-
-    def get_config(self):
-        config = {
-            'cutoff': self.cutoff
-        }
-        base_config = super(CutoffLayer, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
 
 class CosineCutoff(CutoffLayer):
     """The cosine cutoff originally proposed by Behler et al. for ACSFs.
     """
     def cutoff_function(self, distance_matrix):
-        cos_component = 0.5 * (1 + K.cos(np.pi * distance_matrix / self.cutoff))
-        return K.switch(
+        cos_component = 0.5 * (1 + np.cos(np.pi * distance_matrix / self.cutoff))
+        return np.where(
             distance_matrix <= self.cutoff,
             cos_component,
-            K.zeros_like(distance_matrix)
+            np.zeros_like(distance_matrix)
         )
 
 
@@ -343,12 +289,12 @@ class TanhCutoff(CutoffLayer):
     """Alternate tanh^3 cutoff function mentioned in some of the ACSF papers.
     """
     def cutoff_function(self, distance_matrix):
-        normalization_factor = 1.0 / (K.tanh(1.0) ** 3)
-        tanh_component = (K.tanh(1.0 - (distance_matrix / self.cutoff))) ** 3
-        return K.switch(
+        normalization_factor = 1.0 / (np.tanh(1.0) ** 3)
+        tanh_component = (np.tanh(1.0 - (distance_matrix / self.cutoff))) ** 3
+        return np.where(
             distance_matrix <= self.cutoff,
             normalization_factor * tanh_component,
-            K.zeros_like(distance_matrix)
+            np.zeros_like(distance_matrix)
         )
 
 
@@ -357,12 +303,12 @@ class LongTanhCutoff(CutoffLayer):
     longer than the previously proposed tanh function
     """
     def cutoff_function(self, distance_matrix):
-        normalization_factor = 1.0 / (K.tanh(float(self.cutoff)) ** 3)
-        tanh_component = (K.tanh(self.cutoff - distance_matrix)) ** 3
-        return K.switch(
+        normalization_factor = 1.0 / (np.tanh(float(self.cutoff)) ** 3)
+        tanh_component = (np.tanh(self.cutoff - distance_matrix)) ** 3
+        return np.where(
             distance_matrix <= self.cutoff,
             normalization_factor * tanh_component,
-            K.zeros_like(distance_matrix)
+            np.zeros_like(distance_matrix)
         )
 
 
@@ -379,32 +325,20 @@ class AtomicNumberBasis(Layer):
         gaussians_atom_matrix  (batch, atoms, atoms, n_gaussians, max_atomic_number + 1)
     """
     def __init__(self, zero_dummy_atoms=False, **kwargs):
-        kwargs.pop('max_atomic_number', None)  # Backward compatibility
         super(AtomicNumberBasis, self).__init__(**kwargs)
         self.zero_dummy_atoms = zero_dummy_atoms
 
     def call(self, inputs):
         one_hot_numbers, gaussian_mat = inputs
 
-        gaussian_mat = K.expand_dims(gaussian_mat, axis=-1)
+        gaussian_mat = np.expand_dims(gaussian_mat, axis=-1)
         if self.zero_dummy_atoms:
-            mask = K.eye(one_hot_numbers.shape[-1], dtype=K.floatx())
+            mask = np.eye(one_hot_numbers.shape[-1], dtype=gaussian_mat.dtype)
             mask[0] = 0
-            one_hot_numbers = K.dot(one_hot_numbers, mask)
-        one_hot_numbers = K.expand_dims(one_hot_numbers, axis=1)
-        one_hot_numbers = K.expand_dims(one_hot_numbers, axis=3)
+            one_hot_numbers = np.tensordot(one_hot_numbers, mask, axes=1)
+        one_hot_numbers = np.expand_dims(one_hot_numbers, axis=1)
+        one_hot_numbers = np.expand_dims(one_hot_numbers, axis=3)
         return gaussian_mat * one_hot_numbers
-
-    def compute_output_shape(self, input_shapes):
-        one_hot_numbers_shape, gaussian_mat_shape = input_shapes
-        return gaussian_mat_shape + one_hot_numbers_shape[-1:]
-
-    def get_config(self):
-        config = {
-            'zero_dummy_atoms': self.zero_dummy_atoms
-        }
-        base_config = super(AtomicNumberBasis, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 #
@@ -488,18 +422,6 @@ class Unstandardization(Layer):
         else:
             w_shape = self.mu.shape
 
-        self.mu = self.add_weight(
-            name='mu',
-            shape=w_shape,
-            initializer=lambda x: self.mu
-        )
-        self.sigma = self.add_weight(
-            name='sigma',
-            shape=w_shape,
-            initializer=lambda x: self.sigma
-        )
-        super(Unstandardization, self).build(input_shapes)
-
     def call(self, inputs):
         # `atomic_props` should be of shape (batch, atoms, energies)
 
@@ -511,43 +433,13 @@ class Unstandardization(Layer):
             atomic_props = inputs
 
         if self.per_type:
-            atomic_props *= K.dot(one_hot_atomic_numbers, self.sigma)
-            atomic_props += K.dot(one_hot_atomic_numbers, self.mu)
+            atomic_props *= np.tensordot(one_hot_atomic_numbers, self.sigma, axes=1)
+            atomic_props += np.tensordot(one_hot_atomic_numbers, self.mu, axes=1)
         else:
             atomic_props *= self.sigma
             atomic_props += self.mu
 
         return atomic_props
-
-    def compute_output_shape(self, input_shapes):
-        if self.per_type or isinstance(input_shapes, list):
-            atomic_props = input_shapes[-1]
-        else:
-            atomic_props = input_shapes
-        return atomic_props
-
-    def get_config(self):
-        mu = self.init_mu
-        if isinstance(mu, (np.ndarray, np.generic)):
-            if len(mu.shape) > 0:
-                mu = mu.tolist()
-            else:
-                mu = float(mu)
-
-        sigma = self.init_sigma
-        if isinstance(sigma, (np.ndarray, np.generic)):
-            if len(sigma.shape) > 0:
-                sigma = sigma.tolist()
-            else:
-                sigma = float(sigma)
-
-        config = {
-            'mu': mu,
-            'sigma': sigma,
-            'per_type': self.per_type
-        }
-        base_config = super(Unstandardization, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 
@@ -578,14 +470,6 @@ class AtomRefOffset(Unstandardization):
             per_type=True,
             **kwargs
         )
-
-    def get_config(self):
-        base_config = super(AtomRefOffset, self).get_config()
-        config = {
-            'atom_ref': base_config.pop('mu'),
-            'add_offset': self.add_offset
-        }
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 #
@@ -625,40 +509,27 @@ class DummyAtomMasking(Layer):
     def call(self, inputs):
         # `value` should be of shape (batch, atoms, ...)
         one_hot_atomic_numbers, value = inputs
-        atomic_numbers = K.argmax(one_hot_atomic_numbers,
-                                  axis=-1)
+        atomic_numbers = np.argmax(one_hot_atomic_numbers,
+                                   axis=-1)
 
         # Form the mask that removes dummy atoms (atomic number = dummy_index)
         if self.invert_mask:
-            selection_mask = K.equal(atomic_numbers, self.dummy_index)
+            selection_mask = atomic_numbers == self.dummy_index
         else:
-            selection_mask = K.not_equal(atomic_numbers, self.dummy_index)
-        selection_mask = K.cast(selection_mask, value.dtype)
+            selection_mask = atomic_numbers != self.dummy_index
+        selection_mask = selection_mask.astype(value.dtype)
 
         for axis in self.atom_axes:
             mask = selection_mask
             for _ in range(axis - 1):
-                mask = K.expand_dims(mask, axis=1)
+                mask = np.expand_dims(mask, axis=1)
             # Add one since K.int_shape does not return batch dim
-            while len(K.int_shape(value)) != len(K.int_shape(mask)):
-                mask = K.expand_dims(mask, axis=-1)
+            while len(value.shape) != len(mask.shape):
+                mask = np.expand_dims(mask, axis=-1)
 
             # Zeros the energies of dummy atoms
             value *= mask
         return value
-
-    def compute_output_shape(self, input_shapes):
-        value = input_shapes[-1]
-        return value
-
-    def get_config(self):
-        config = {
-            'atom_axes': self.atom_axes,
-            'invert_mask': self.invert_mask,
-            'dummy_index': self.dummy_index
-        }
-        base_config = super(DummyAtomMasking, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 
 class SelectAtoms(DummyAtomMasking):

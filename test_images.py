@@ -3,10 +3,10 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 
-from atomic_images.np_layers import (CosineCutoff, DistanceMatrix,
-                                    AtomicNumberBasis, GaussianBasis,
-                                    LongTanhCutoff, OneHot, TanhCutoff,
-                                    DummyAtomMasking, TriangularBasis)
+from atomic_images.np_utils import (cosine_cutoff, distance_matrix,
+                                    expand_atomic_numbers, expand_gaussians,
+                                    long_tanh_cutoff, one_hot, tanh_cutoff,
+                                    zero_dummy_atoms, expand_triangles)
 
 
 def main(args):
@@ -50,87 +50,55 @@ def main(args):
     cutoff = args.cutoff
 
     # Converts index based atomic numbers to one-hot
-    one_hot_z = OneHot(np.max(z))(z)
+    one_hot_z = one_hot(z)
 
     # Calculates the distance matrix for the given Cartesian coordinates
-    dist_matrix = DistanceMatrix()(r)
+    dist_matrix = distance_matrix(r)
 
     # Expands distances into a Gaussian basis set, returning mu for plotting
     # purposes.
     if args.kernel == 'gaussian':
-        layer = GaussianBasis()
-        gaussians = layer(dist_matrix)
+        gaussians, mu = expand_gaussians(dist_matrix, return_mu=True)
     elif args.kernel == 'triangle':
-        layer = TriangularBasis()
-        gaussians = layer(dist_matrix)
-    mu = layer.mu
-    del layer
+        gaussians, mu = expand_triangles(dist_matrix, return_mu=True)
 
     if args.cutoff_type == 'tanh':
-        gaussians = TanhCutoff(cutoff)([dist_matrix, gaussians])
+        gaussians = tanh_cutoff(dist_matrix, gaussians, cutoff)
     elif args.cutoff_type == 'long_tanh':
-        gaussians = LongTanhCutoff(cutoff)([dist_matrix, gaussians])
+        gaussians = long_tanh_cutoff(dist_matrix, gaussians, cutoff)
     elif args.cutoff_type == 'cos':
-        gaussians = CosineCutoff(cutoff)([dist_matrix, gaussians])
+        gaussians = cosine_cutoff(dist_matrix, gaussians, cutoff)
 
     # Sets elements of dummy atoms (z = 0) to zero
-    interaction_images = DummyAtomMasking(atom_axes=[1, 2])([one_hot_z, gaussians])
+    interaction_images = zero_dummy_atoms(gaussians, one_hot_z, atom_axes=[1, 2])
 
     # Expands the Gaussians into a one-hot atomic number dimension
-    interaction_images = AtomicNumberBasis()([one_hot_z, interaction_images])
+    interaction_images = expand_atomic_numbers(interaction_images, one_hot_z, zero_dummy_atoms=False)
+    interaction_images = np.moveaxis(interaction_images, [0, 1, 2, 3, 4], [0, 1, 2, 4, 3])
 
     # Which molecule to visualize
     mol_i = 0
 
     # Show image before summing
     # Corresponds to an image of an "interaction" between two atoms
-    plt.imshow(interaction_images[mol_i, 0, 0])
-    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.matshow(interaction_images[mol_i, 0, 4])
+    plt.xticks(np.arange(len(mu))[::10], mu[::10])
     plt.title('Interaction Image')
-    plt.ylabel('Distance (Angstroms)')
-    plt.xlabel('Atomic Number')
-    plt.show()
-
-    flattened_interaction_images = np.concatenate(tuple(interaction_images[mol_i, 0, i] for i in range(interaction_images.shape[2])), axis=-1)
-    plt.imshow(flattened_interaction_images)
-    plt.xticks(np.arange(0, flattened_interaction_images.shape[-1], interaction_images.shape[-1]))
-    plt.yticks(np.arange(len(mu))[::10], mu[::10])
-    plt.title('All Interaction Images')
-    plt.ylabel('Distance (Angstroms)')
-    plt.xlabel('Atomic Number')
-    plt.grid(True, which='major', axis='x')
-    plt.show()
+    plt.xlabel('Distance (Angstroms)')
+    plt.ylabel('Atomic Number')
+    # plt.show()
+    plt.savefig('single_interaction.svg')
 
     # Squash one atoms dimension to get atomic images
     # Corresponds to all interactions for single atoms
     atomic_images = np.sum(interaction_images, axis=2)
-    plt.imshow(atomic_images[mol_i, 0])
-    plt.yticks(np.arange(len(mu))[::10], mu[::10])
+    plt.matshow(atomic_images[mol_i, 0])
+    plt.xticks(np.arange(len(mu))[::10], mu[::10])
     plt.title('Atomic Image')
-    plt.ylabel('Distance (Angstroms)')
-    plt.xlabel('Atomic Number')
-    plt.show()
-
-    # Show all atoms for para-chlorobenzoic acid
-    flattened_atomic_images = np.concatenate(tuple(atomic_images[mol_i, i] for i in range(atomic_images.shape[1])), axis=-1)
-    plt.imshow(flattened_atomic_images)
-    plt.xticks(np.arange(0, flattened_atomic_images.shape[-1], atomic_images.shape[-1]))
-    plt.yticks(np.arange(len(mu))[::10], mu[::10])
-    plt.title('All Atomic Images')
-    plt.ylabel('Distance (Angstroms)')
-    plt.xlabel('Atomic Number')
-    plt.grid(True, which='major', axis='x')
-    plt.show()
-
-    # Squash the last atoms dimension to get molecular images
-    # Corresponds to all interactions for every atom in the molecule
-    molecular_images = np.sum(atomic_images, axis=1)
-    plt.imshow(molecular_images[mol_i])
-    plt.yticks(np.arange(len(mu))[::10], mu[::10])
-    plt.title('Molecular Image')
-    plt.ylabel('Distance (Angstroms)')
-    plt.xlabel('Atomic Number')
-    plt.show()
+    plt.xlabel('Distance (Angstroms)')
+    plt.ylabel('Atomic Number')
+    # plt.show()
+    plt.savefig('atomic_image.svg')
 
 
 if __name__ == '__main__':
