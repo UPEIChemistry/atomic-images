@@ -1,6 +1,5 @@
 import numpy as np
 from keras import backend as K
-from keras.initializers import Constant as ConstantInit
 from keras.layers import Layer, Lambda
 
 from atomic_images import keras_utils
@@ -493,12 +492,12 @@ class Unstandardization(Layer):
         self.mu = self.add_weight(
             name='mu',
             shape=w_shape,
-            initializer=ConstantInit(self.mu)
+            initializer=lambda x: self.mu
         )
         self.sigma = self.add_weight(
             name='sigma',
             shape=w_shape,
-            initializer=ConstantInit(self.sigma)
+            initializer=lambda x: self.sigma
         )
         super(Unstandardization, self).build(input_shapes)
 
@@ -576,7 +575,7 @@ class AtomRefOffset(Unstandardization):
         kwargs.pop('per_type', None)
         super(AtomRefOffset, self).__init__(
             mu=atom_ref,
-            sigma=kwargs.pop('sigma', 1),
+            sigma=kwargs.pop('sigma', 1.0),
             per_type=True,
             **kwargs
         )
@@ -635,7 +634,7 @@ class DummyAtomMasking(Layer):
             selection_mask = K.equal(atomic_numbers, self.dummy_index)
         else:
             selection_mask = K.not_equal(atomic_numbers, self.dummy_index)
-        selection_mask = K.cast(selection_mask, K.floatx())
+        selection_mask = K.cast(selection_mask, value.dtype)
 
         for axis in self.atom_axes:
             mask = selection_mask
