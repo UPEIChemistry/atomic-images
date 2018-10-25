@@ -406,7 +406,7 @@ class Unstandardization(Layer):
                              'expected %s but was %s' % (shape, arr.shape))
         return arr
 
-    def build(self, input_shapes):
+    def build(self, inputs):
         # If mu is given as a vector, assume it applies to all atoms
         if len(self.mu.shape) == 1:
             self.mu = np.expand_dims(self.mu, axis=0)
@@ -414,7 +414,10 @@ class Unstandardization(Layer):
             self.sigma = np.expand_dims(self.sigma, axis=0)
 
         if self.per_type:
-            one_hot_atomic_numbers, atomic_props = input_shapes
+            one_hot_atomic_numbers, atomic_props = inputs
+            one_hot_atomic_numbers = one_hot_atomic_numbers.shape
+            atomic_props = atomic_props.shape
+
             w_shape = (one_hot_atomic_numbers[-1], atomic_props[-1])
 
             self.mu = self.expand_ones_to_shape(self.mu, w_shape)
