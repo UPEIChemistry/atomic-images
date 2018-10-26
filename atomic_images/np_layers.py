@@ -383,10 +383,12 @@ class Unstandardization(Layer):
         sigma (float, list, or np.ndarray): the standard deviation
             values by which to scale the inputs to this layer
     """
-    def __init__(self, mu, sigma, trainable=False, per_type=None, **kwargs):
+    def __init__(self, mu, sigma, trainable=False, per_type=None, use_float64=False, **kwargs):
         super(Unstandardization, self).__init__(trainable=trainable, **kwargs)
         self.init_mu = mu
         self.init_sigma = sigma
+        self.use_float64 = use_float64
+        self.dtype = 'float64' if use_float64 else 'float32'
 
         self.mu = np.asanyarray(self.init_mu)
         self.sigma = np.asanyarray(self.init_sigma)
@@ -425,6 +427,9 @@ class Unstandardization(Layer):
         else:
             w_shape = self.mu.shape
 
+        self.mu = self.mu.astype(self.dtype)
+        self.sigma = self.sigma.astype(self.dtype)
+
     def call(self, inputs):
         # `atomic_props` should be of shape (batch, atoms, energies)
 
@@ -434,6 +439,8 @@ class Unstandardization(Layer):
             one_hot_atomic_numbers, atomic_props = inputs
         else:
             atomic_props = inputs
+        atomic_props = atomic_props.astype(self.dtype)
+        one_hot_atomic_numbers = one_hot_atomic_numbers.astype(self.dtype)
 
         if self.per_type:
             atomic_props *= np.tensordot(one_hot_atomic_numbers, self.sigma, axes=1)

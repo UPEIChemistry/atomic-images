@@ -449,10 +449,12 @@ class Unstandardization(Layer):
         sigma (float, list, or np.ndarray): the standard deviation
             values by which to scale the inputs to this layer
     """
-    def __init__(self, mu, sigma, trainable=False, per_type=None, **kwargs):
+    def __init__(self, mu, sigma, trainable=False, per_type=None, use_float64=False, **kwargs):
         super(Unstandardization, self).__init__(trainable=trainable, **kwargs)
         self.init_mu = mu
         self.init_sigma = sigma
+        self.use_float64 = use_float64
+        self.dtype = 'float64' if use_float64 else 'float32'
 
         self.mu = np.asanyarray(self.init_mu)
         self.sigma = np.asanyarray(self.init_sigma)
@@ -491,12 +493,14 @@ class Unstandardization(Layer):
         self.mu = self.add_weight(
             name='mu',
             shape=w_shape,
-            initializer=lambda x: self.mu
+            initializer=lambda x: self.mu,
+            dtype=self.dtype
         )
         self.sigma = self.add_weight(
             name='sigma',
             shape=w_shape,
-            initializer=lambda x: self.sigma
+            initializer=lambda x: self.sigma,
+            dtype=self.dtype
         )
         super(Unstandardization, self).build(input_shapes)
 
@@ -509,6 +513,8 @@ class Unstandardization(Layer):
             one_hot_atomic_numbers, atomic_props = inputs
         else:
             atomic_props = inputs
+        atomic_props = K.cast(atomic_props, self.dtype)
+        one_hot_atomic_numbers = K.cast(one_hot_atomic_numbers, self.dtype)
 
         if self.per_type:
             atomic_props *= K.dot(one_hot_atomic_numbers, self.sigma)
@@ -544,7 +550,8 @@ class Unstandardization(Layer):
         config = {
             'mu': mu,
             'sigma': sigma,
-            'per_type': self.per_type
+            'per_type': self.per_type,
+            'use_float64': self.use_float64
         }
         base_config = super(Unstandardization, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
