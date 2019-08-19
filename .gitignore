@@ -111,3 +111,4 @@ venv.bak/
 
 # Project
 test_storage/
+*.idea
