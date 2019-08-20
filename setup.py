@@ -10,5 +10,8 @@ setup(
     author=__author__,
     author_email=__email__,
     description=__description__,
-    install_requires=['keras', 'numpy']
+    install_requires=['tensorflow', 'numpy'],
+    extras_require={
+        'tests': ['pytest']
+    },
 )
