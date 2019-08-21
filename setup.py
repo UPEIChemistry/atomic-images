@@ -9,9 +9,5 @@ setup(
     packages=find_packages(),
     author=__author__,
     author_email=__email__,
-    description=__description__,
-    install_requires=['tensorflow', 'numpy'],
-    extras_require={
-        'tests': ['pytest']
-    },
+    description=__description__
 )
