@@ -86,6 +86,19 @@ class KernelBasis(Layer):
     def compute_output_shape(self, input_shape):
         return tf.TensorShape(list(input_shape) + [self._n_centers])
 
+    def get_config(self):
+        config = {
+            'width': self.width,
+            'spacing': self.spacing,
+            'min_value': self.min_value,
+            'max_value': self.max_value,
+            'self_thresh': self.self_thresh,
+            'include_self_interactions': self.include_self_interactions,
+            'endpoint': self.endpoint
+        }
+        base_config = super().get_config()
+        return {**base_config, **config}
+
 
 class GaussianBasis(KernelBasis):
     """Expand distance matrix into Gaussians of width=width, spacing=spacing,
@@ -115,7 +128,6 @@ class GaussianBasis(KernelBasis):
     def kernel_func(self, inputs, centres):
         gamma = -0.5 / (self.width ** 2)
         return K.exp(gamma * K.square(inputs - centres))
-
 
 
 #
@@ -150,6 +162,13 @@ class AtomicNumberBasis(Layer):
     def compute_output_shape(self, input_shapes):
         one_hot_numbers_shape, gaussian_mat_shape = input_shapes
         return tf.TensorShape(list(gaussian_mat_shape) + [one_hot_numbers_shape[-1]])
+
+    def get_config(self):
+        config = {
+            'zero_dummy_atoms': self.zero_dummy_atoms
+        }
+        base_config = super(AtomicNumberBasis, self).get_config()
+        return {**base_config, **config}
 
 
 #
@@ -273,6 +292,30 @@ class Unstandardization(Layer):
             atomic_props = input_shapes
         return atomic_props
 
+    def get_config(self):
+        mu = self.init_mu
+        if isinstance(mu, (np.ndarray, np.generic)):
+            if len(mu.shape) > 0:
+                mu = mu.tolist()
+            else:
+                mu = float(mu)
+
+        sigma = self.init_sigma
+        if isinstance(sigma, (np.ndarray, np.generic)):
+            if len(sigma.shape) > 0:
+                sigma = sigma.tolist()
+            else:
+                sigma = float(sigma)
+
+        config = {
+            'mu': mu,
+            'sigma': sigma,
+            'per_type': self.per_type,
+            'use_float64': self.use_float64
+        }
+        base_config = super(Unstandardization, self).get_config()
+        return {**base_config, **config}
+
 
 #
 # Dummy atom-related layers
@@ -336,6 +379,15 @@ class DummyAtomMasking(Layer):
     def compute_output_shape(self, input_shapes):
         value = input_shapes[-1]
         return value
+
+    def get_config(self):
+        config = {
+            'atom_axes': self.atom_axes,
+            'invert_mask': self.invert_mask,
+            'dummy_index': self.dummy_index
+        }
+        base_config = super(DummyAtomMasking, self).get_config()
+        return {**base_config, **config}
 
 
 #
