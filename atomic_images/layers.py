@@ -7,6 +7,41 @@ from atomic_images import keras_utils
 import numpy as np
 
 
+class OneHot(Layer):
+    """One-hot atomic number layer
+
+    Converts a list of atomic numbers to one-hot vectors
+
+    Input: atomic numbers (batch, atoms)
+    Output: one-hot atomic number (batch, atoms, atomic_number)
+    """
+    def __init__(self,
+                 max_atomic_number,
+                 **kwargs):
+        # Parameters
+        self.max_atomic_number = max_atomic_number
+
+        super(OneHot, self).__init__(**kwargs)
+
+    def call(self, inputs, **kwargs):
+        atomic_numbers = inputs
+        return K.one_hot(atomic_numbers,
+                         self.max_atomic_number)
+
+    def compute_output_shape(self, input_shapes):
+        atomic_numbers = input_shapes
+        return tf.TensorShape(
+            list(atomic_numbers) + [self.max_atomic_number]
+        )
+
+    def get_config(self):
+        base_config = super(OneHot, self).get_config()
+        config = {
+            'max_atomic_number': self.max_atomic_number
+        }
+        return {**base_config, **config}
+
+
 class DistanceMatrix(Layer):
     """
     Distance matrix layer
@@ -473,3 +508,18 @@ class LongTanhCutoff(CutoffLayer):
             normalization_factor * tanh_component,
             K.zeros_like(distance_matrix)
         )
+
+
+tf.keras.utils.get_custom_objects().update({
+    OneHot.__name__: OneHot,
+    DistanceMatrix.__name__: DistanceMatrix,
+    KernelBasis.__name__: KernelBasis,
+    GaussianBasis.__name__: GaussianBasis,
+    AtomicNumberBasis.__name__: AtomicNumberBasis,
+    Unstandardization.__name__: Unstandardization,
+    DummyAtomMasking.__name__: DummyAtomMasking,
+    CutoffLayer.__name__: CutoffLayer,
+    CosineCutoff.__name__: CosineCutoff,
+    TanhCutoff.__name__: TanhCutoff,
+    LongTanhCutoff.__name__: LongTanhCutoff
+})
