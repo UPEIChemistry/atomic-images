@@ -173,7 +173,7 @@ class CosineBasis(KernelBasis):
     of a cosine function parameterized by a grid of kappa values, where kappa refers to the period size of the
     cosine function.\n
 
-    f(kappa, x) = cos(kappa * x) * e^(w)
+    f(kappa, x) = cos(kappa * x) * e^(-w * x)
 
     Where:
         x is our distance value;\n
@@ -195,7 +195,7 @@ class CosineBasis(KernelBasis):
                 (batch, atoms, atoms, n_gaussians)
     """
     def kernel_func(self, inputs, centres):
-        return K.cos(centres * inputs) * K.exp(self.width)
+        return K.cos(centres * inputs) * K.exp(-self.width * inputs)
 
 
 #
