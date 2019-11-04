@@ -58,6 +58,12 @@ def gaussian_basis_model(request):
 
 
 @pytest.fixture(scope='session')
+def cosine_basis_model(request):
+    dynamic = request.config.getoption('--eager')
+    return SingleLayerModel(layers.GaussianBasis(dynamic=dynamic))
+
+
+@pytest.fixture(scope='session')
 def atomic_num_basis_model(request):
     dynamic = request.config.getoption('--eager')
     return SingleLayerModel(layers.AtomicNumberBasis(dynamic=dynamic))

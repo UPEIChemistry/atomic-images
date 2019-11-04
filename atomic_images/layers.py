@@ -1,3 +1,5 @@
+from typing import List
+
 import tensorflow as tf
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Layer, Lambda
@@ -163,6 +165,37 @@ class GaussianBasis(KernelBasis):
     def kernel_func(self, inputs, centres):
         gamma = -0.5 / (self.width ** 2)
         return K.exp(gamma * K.square(inputs - centres))
+
+
+class CosineBasis(KernelBasis):
+    """
+    Expand distance value into a vector of dampened cosine activations, each element representing the activation
+    of a cosine function parameterized by a grid of kappa values, where kappa refers to the period size of the
+    cosine function.\n
+
+    f(kappa, x) = cos(kappa * x) * e^(w)
+
+    Where:
+        x is our distance value;\n
+        w is the width parameter of the dampening;
+
+    Input: distance_matrix (batch, atoms, atoms);\n
+    Output: distance_matrix expanded into Cosine basis set (batch, atoms, atoms, n_centres)
+
+    Args:
+        min_value (float, optional): minimum value of kappa
+        max_value (float, optional): maximum value (non-inclusive) of kappa
+        width (float, optional): Parameter for dampening, lower width means the cosine function dampens earlier,
+            and only shorter distances are probed. Keep around 0.2
+        spacing (float, optional): spacing on the grid of kappa values being used to generate cosine basis functions
+        self_thresh (float, optional): value below which a distance is
+            considered to be a self interaction (i.e. zero)
+        include_self_interactions (bool, optional): whether or not to include
+            self-interactions (i.e. distance is zero)
+                (batch, atoms, atoms, n_gaussians)
+    """
+    def kernel_func(self, inputs, centres):
+        return K.cos(centres * inputs) * K.exp(self.width)
 
 
 #
