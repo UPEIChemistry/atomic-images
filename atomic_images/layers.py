@@ -195,7 +195,15 @@ class CosineBasis(KernelBasis):
                 (batch, atoms, atoms, n_gaussians)
     """
     def kernel_func(self, inputs, centres):
-        return K.cos(centres * inputs) * K.exp(-self.width * inputs)
+        return K.cos(centres * inputs) * self.cutoff(inputs)
+
+    def cutoff(self, inputs):
+        return K.exp(-self.width * inputs)
+
+
+class ShiftedCosineBasis(CosineBasis):
+    def kernel_func(self, inputs, centres):
+        return (0.5 * (K.cos(centres * inputs) + 1)) * self.cutoff(inputs)
 
 
 #

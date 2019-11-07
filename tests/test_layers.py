@@ -32,6 +32,15 @@ def test_cosine_basis(random_cartesians_and_z, cosine_basis_model):
     )
 
 
+def test_shifted_cosine_basis(random_cartesians_and_z, shifted_cosine_basis_model):
+    r = random_cartesians_and_z[0]
+    run_model_test(
+        DistanceMatrix()(r).numpy(),
+        np.random.rand(2, 10, 10, 50),
+        shifted_cosine_basis_model
+    )
+
+
 def test_atomic_basis(random_cartesians_and_z, atomic_num_basis_model):
     r, z = random_cartesians_and_z
     rbf = GaussianBasis()(DistanceMatrix()(r)).numpy()

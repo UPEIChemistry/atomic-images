@@ -60,7 +60,13 @@ def gaussian_basis_model(request):
 @pytest.fixture(scope='session')
 def cosine_basis_model(request):
     dynamic = request.config.getoption('--eager')
-    return SingleLayerModel(layers.GaussianBasis(dynamic=dynamic))
+    return SingleLayerModel(layers.CosineBasis(dynamic=dynamic))
+
+
+@pytest.fixture(scope='session')
+def shifted_cosine_basis_model(request):
+    dynamic = request.config.getoption('--eager')
+    return SingleLayerModel(layers.ShiftedCosineBasis(dynamic=dynamic))
 
 
 @pytest.fixture(scope='session')
