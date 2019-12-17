@@ -36,13 +36,12 @@ def main():
         spacing=0.2
     )(dist)
     one_hot_z = OneHot(max_atomic_number=max_z)(z)
-    angle_tensor = AngleTensor(deg=True)([r, dist])
 
     interaction_images = DummyAtomMasking(atom_axes=[1, 2])(
         [one_hot_z, gaussians]
     )
 
-    interaction_images = AtomicNumberBasis()([one_hot_z, gaussians])
+    interaction_images = AtomicNumberBasis()([one_hot_z, interaction_images])
     atomic_images = Lambda(lambda x: K.sum(x, axis=2))(interaction_images)
     at_shape = K.int_shape(atomic_images)
 
